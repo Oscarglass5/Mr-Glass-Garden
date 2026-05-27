@@ -497,7 +497,7 @@ const COLLISION_BOXES = [
   // Pond water
   {x:28*T, y:T, w:7*T, h:5*T},
   // Market stall
-  {x:17*T, y:12*T, w:6*T, h:5*T},
+  {x:17*T, y:11*T, w:10*T, h:5*T},
   // World boundary
   {x:0, y:0, w:T, h:WH},
   {x:0, y:0, w:WW, h:T},
@@ -642,69 +642,147 @@ function updateHint() {
 // ════════════════════════════════════════════════════════════════════════
 
 // ── GROUND TILES ──────────────────────────────────────────────────────
-function drawGround() {
-  const c0=Math.max(0,Math.floor(cam.x/T));
-  const c1=Math.min(COLS,Math.ceil((cam.x+VW)/T)+1);
-  const r0=Math.max(0,Math.floor(cam.y/T));
-  const r1=Math.min(ROWS,Math.ceil((cam.y+VH)/T)+1);
+function tileHash(col,row) {
+  // Fast deterministic hash for per-tile variation — no Math.random()
+  var h=(col*2654435761^row*2246822519)>>>0;
+  return h;
+}
 
-  for(let row=r0;row<r1;row++) {
-    for(let col=c0;col<c1;col++) {
-      const {sx,sy}=sw(col*T,row*T);
-      const tile=TM[row]?.[col]??0;
-      if(tile===5) { // water — drawn separately
-        X.fillStyle=P.wa1;X.fillRect(sx,sy,T,T);
+function drawTileTransformed(img,sx,sy,sw,sh,dx,dy,dw,dh,hash) {
+  // Apply random rotation/flip based on hash to break tiling
+  var flip=(hash&1)===1;
+  var rot=(hash>>1)&3; // 0=0deg, 1=90, 2=180, 3=270
+  if(flip||rot) {
+    X.save();
+    X.translate(dx+dw/2,dy+dh/2);
+    if(flip) X.scale(-1,1);
+    if(rot) X.rotate(rot*Math.PI/2);
+    X.drawImage(img,sx,sy,sw,sh,-dw/2,-dh/2,dw,dh);
+    X.restore();
+  } else {
+    X.drawImage(img,sx,sy,sw,sh,dx,dy,dw,dh);
+  }
+}
+
+function drawGround() {
+  var c0=Math.max(0,Math.floor(cam.x/T));
+  var c1=Math.min(COLS,Math.ceil((cam.x+VW)/T)+1);
+  var r0=Math.max(0,Math.floor(cam.y/T));
+  var r1=Math.min(ROWS,Math.ceil((cam.y+VH)/T)+1);
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+
+  for(var row=r0;row<r1;row++) {
+    for(var col=c0;col<c1;col++) {
+      var p=sw(col*T,row*T);
+      var sx2=p.sx, sy2=p.sy;
+      var tile=TM[row]?TM[row][col]:0;
+      if(tile===undefined) tile=0;
+
+      if(tile===5) {
+        // Water — drawn by drawWater(), fill base colour here
+        X.fillStyle=P.wa1;X.fillRect(sx2,sy2,T,T);
         continue;
       }
-      // Try PathAndObjects texture
-      if(poImg.complete&&poImg.naturalWidth>0) {
-        const seed=(row*7+col*13)%3;
-        if(tile===0) {       // grass
-          X.drawImage(poImg,seed*96,0,96,96,sx,sy,T,T);
-        } else if(tile===1||tile===2) { // path
-          X.drawImage(poImg,192,0,96,96,sx,sy,T,T);
-        } else if(tile===3) { // stone
-          X.drawImage(poImg,seed*96,96,96,96,sx,sy,T,T);
-        } else if(tile===4) { // dirt
-          X.drawImage(poImg,(seed+2)*96,96,96,96,sx,sy,T,T);
-        } else if(tile===6) { // cobble
-          X.drawImage(poImg,seed*96,192,96,96,sx,sy,T,T);
+
+      var h=tileHash(col,row);
+
+      if(loaded) {
+        if(tile===0) {
+          // GRASS — use both grass tiles with random rotation to blend edges
+          // Alternate between tile (0,0) and (96,0) based on hash
+          var gx=(h&2)?96:0;
+          drawTileTransformed(poImg,gx,0,96,96,sx2,sy2,T,T,h);
+
+        } else if(tile===1||tile===2) {
+          // PATH — cobblestone tiles (0,96) and (96,96)
+          // Use cobble 1 and 2 alternating — these have the stone+grass look
+          var cx2=(h&4)?96:0;
+          // No rotation on paths — keep orientation consistent for road feel
+          X.drawImage(poImg,cx2,96,96,96,sx2,sy2,T,T);
+
+        } else if(tile===3) {
+          // STONE (near cave) — overgrown stone (0,192) and (96,192)
+          var ox=(h&2)?96:0;
+          drawTileTransformed(poImg,ox,192,96,96,sx2,sy2,T,T,h);
+
+        } else if(tile===4) {
+          // DIRT (garden soil) — earth path tile (192,0) and (288,0)
+          var dx2=(h&4)?288:192;
+          drawTileTransformed(poImg,dx2,0,96,96,sx2,sy2,T,T,h);
+
+        } else if(tile===6) {
+          // COBBLE (general) — row 1 tiles
+          var cbx=(h&2)?96:0;
+          drawTileTransformed(poImg,cbx,96,96,96,sx2,sy2,T,T,h);
         }
       } else {
-        // Fallback colours
-        const cols=[P.g1,P.ps1,P.ps2,P.co1,P.dr1,P.wa1,P.co2];
-        X.fillStyle=cols[tile]||P.g1;
-        X.fillRect(sx,sy,T,T);
-        // Subtle variation
-        const v=(row*17+col*11)%6;
-        if(tile===0&&v<2){X.fillStyle=P.g2;X.fillRect(sx+4,sy+5,4,3);}
+        // Fallback solid colours
+        var fallback=[P.g1,P.ps1,P.ps2,P.co1,P.dr1,P.wa1,P.co2];
+        X.fillStyle=fallback[tile]||P.g1;
+        X.fillRect(sx2,sy2,T,T);
       }
     }
   }
 }
 
-// ── ANIMATED WATER ────────────────────────────────────────────────────
+// ── ANIMATED WATER + POND EDGES ───────────────────────────────────────
 function drawWater() {
-  const c0=Math.max(28,Math.floor(cam.x/T));
-  const c1=Math.min(35,Math.ceil((cam.x+VW)/T)+1);
-  const r0=Math.max(1,Math.floor(cam.y/T));
-  const r1=Math.min(6,Math.ceil((cam.y+VH)/T)+1);
-  for(let row=r0;row<r1;row++) {
-    for(let col=c0;col<c1;col++) {
-      if(TM[row]?.[col]!==5) continue;
-      const {sx,sy}=sw(col*T,row*T);
-      X.fillStyle=P.wa2;X.fillRect(sx,sy,T,T);
-      X.fillStyle=P.wa3;X.fillRect(sx+1,sy+1,T-2,T-2);
-      // Animated ripple
-      const rOff=(fc*0.3+col*2+row*3)%T;
-      X.fillStyle=P.wa4;
-      X.fillRect(sx+Math.floor(rOff),sy+T/2-1,4,2);
+  var c0=Math.max(27,Math.floor(cam.x/T));
+  var c1=Math.min(36,Math.ceil((cam.x+VW)/T)+1);
+  var r0=Math.max(0,Math.floor(cam.y/T));
+  var r1=Math.min(7,Math.ceil((cam.y+VH)/T)+1);
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+
+  for(var row=r0;row<r1;row++) {
+    for(var col=c0;col<c1;col++) {
+      var tileVal=TM[row]?TM[row][col]:0;
+      var p=sw(col*T,row*T);
+      var wsx=p.sx, wsy=p.sy;
+
+      if(tileVal===5) {
+        // Water interior — animated
+        X.fillStyle=P.wa2;X.fillRect(wsx,wsy,T,T);
+        X.fillStyle=P.wa3;X.fillRect(wsx+1,wsy+1,T-2,T-2);
+        // Ripple animation
+        var rOff=Math.floor((fc*0.35+col*2.3+row*1.7))%T;
+        X.fillStyle=P.wa4;
+        X.fillRect(wsx+rOff,wsy+T/2-1,5,2);
+        // Sparkle
+        if((fc+col*3+row*7)%40===0) {
+          X.fillStyle='#ffffff';
+          X.fillRect(wsx+(col*5)%T,wsy+(row*7)%T,2,2);
+        }
+      } else if(tileVal===0) {
+        // Check if adjacent to water — if so draw pond edge tile
+        var adjWater=false;
+        var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+        for(var d=0;d<dirs.length;d++) {
+          var nr=row+dirs[d][1], nc=col+dirs[d][0];
+          if(TM[nr]&&TM[nr][nc]===5) { adjWater=true; break; }
+        }
+        if(adjWater&&loaded) {
+          // Pond edge tile from PathAndObjects: x=0,y=288, 64x64
+          // This has grass+dark water edge blend
+          X.drawImage(poImg,0,288,64,64,wsx,wsy,T,T);
+        }
+      }
     }
   }
-  // Shoreline edge
-  const {sx:sx0,sy:sy0}=sw(28*T,6*T);
-  X.fillStyle=P.g3||'#507000';
-  X.fillRect(sx0,sy0,7*T,3);
+
+  // Boats on pond
+  drawBoats();
+}
+
+function drawBoats() {
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  if(!loaded) return;
+  // Two wooden boats near pond edge
+  // Boat 1: x=0,y=448, 96x64 in source
+  var pb1=sw(28*T,5*T);
+  X.drawImage(poImg,0,448,96,64,pb1.sx,pb1.sy,T*2,T);
+  // Boat 2 slightly offset
+  var pb2=sw(31*T,4*T);
+  X.drawImage(poImg,96,448,96,64,pb2.sx,pb2.sy,T*2,T);
 }
 
 // ── FENCE (world boundary) ────────────────────────────────────────────
@@ -737,9 +815,10 @@ function drawFence() {
     X.fillStyle=P.wd4;X.fillRect(sx,sy,2,T);
   }
   // Post caps
-  posts.forEach(([sx,sy])=>{
-    X.fillStyle=P.wd1;X.fillRect(sx,sy,5,T/2);
-    X.fillStyle=P.wd2;X.fillRect(sx+1,sy,3,T/2);
+  posts.forEach(function(post){
+    var fsx=post[0],fsy=post[1];
+    X.fillStyle=P.wd1;X.fillRect(fsx,fsy,5,T/2);
+    X.fillStyle=P.wd2;X.fillRect(fsx+1,fsy,3,T/2);
   });
 }
 
@@ -774,7 +853,8 @@ function drawFarmhouse() {
 
   // === WINDOWS (2 on each side) ===
   const winY=sy+3*T+6;
-  [[sx+10,winY],[sx+fw-30,winY]].forEach(([wx,wy])=>{
+  [[sx+10,winY],[sx+fw-30,winY]].forEach(function(win){
+    var wx=win[0],wy=win[1];
     X.fillStyle=P.dk;X.fillRect(wx-2,wy-2,22,18);
     X.fillStyle=P.wa3;X.fillRect(wx,wy,20,14);
     X.fillStyle=P.sl1;X.fillRect(wx,wy,9,6);
@@ -908,21 +988,28 @@ function drawStudyTree() {
 
 // ── BACKGROUND TREES ──────────────────────────────────────────────────
 function drawBgTrees() {
-  const positions=[[1,2],[1,12],[1,22],[41,3],[41,13],[41,22],[2,32],[41,32]];
-  positions.forEach(([tc,tr])=>{
-    const {sx,sy}=sw(tc*T,tr*T);
-    // Trunk
-    X.fillStyle=P.wd1;X.fillRect(sx+5,sy+18,8,T+6);
-    // Canopy layers
-    X.fillStyle=P.tr1;X.fillRect(sx,sy+6,T+4,T);
-    X.fillStyle=P.tr2;X.fillRect(sx+2,sy+4,T,T);
-    X.fillStyle=P.tr3;X.fillRect(sx+5,sy+2,T-6,T-4);
-    X.fillStyle=P.tr4;X.fillRect(sx+8,sy,T-12,T/2);
+  var positions=[[1,2],[1,12],[1,22],[41,3],[41,13],[41,22],[2,32],[41,32]];
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  positions.forEach(function(tc_tr) {
+    var tc=tc_tr[0], tr=tc_tr[1];
+    var p=sw(tc*T,tr*T);
+    var bsx2=p.sx, bsy2=p.sy;
+    // Trunk (drawn)
+    X.fillStyle=P.wd1;X.fillRect(bsx2+5,bsy2+18,8,T+6);
+    X.fillStyle=P.wd2;X.fillRect(bsx2+6,bsy2+20,5,T+4);
+    // Canopy — use bush sprite scaled up, or drawn fallback
+    if(loaded) {
+      // Bush sprite: x=0,y=352, 64x64
+      X.drawImage(poImg,0,352,64,48,bsx2,bsy2,T+4,T);
+    } else {
+      X.fillStyle=P.tr1;X.fillRect(bsx2,bsy2+6,T+4,T);
+      X.fillStyle=P.tr2;X.fillRect(bsx2+2,bsy2+4,T,T);
+      X.fillStyle=P.tr3;X.fillRect(bsx2+5,bsy2+2,T-6,T-4);
+      X.fillStyle=P.tr4;X.fillRect(bsx2+8,bsy2,T-12,T/2);
+    }
   });
 }
 
-// ── WELL ──────────────────────────────────────────────────────────────
-// Position: 26*T, 17*T
 function drawWell() {
   const ox=26*T, oy=17*T;
   const {sx,sy}=sw(ox,oy);
@@ -1074,34 +1161,38 @@ function drawMailbox() {
 // ── MARKET STALL ──────────────────────────────────────────────────────
 // Position: 17*T, 12*T
 function drawMarketStall() {
-  const {sx,sy}=sw(17*T,12*T);
-  const sw2=5*T, sh=4*T;
-  // Back wall
-  X.fillStyle=P.wd1;X.fillRect(sx,sy,sw2,sh-T);
-  // Counter
-  X.fillStyle=P.wd3;X.fillRect(sx-2,sy+sh-T-2,sw2+4,T+2);
-  X.fillStyle=P.wd4;X.fillRect(sx-1,sy+sh-T,sw2+2,T-2);
-  // Awning stripes
-  for(let i=0;i<sw2;i+=8) {
-    X.fillStyle=i%16===0?'#e0c020':'#c8a010';
-    X.fillRect(sx+i,sy-6,8,8);
+  // Market stall position: 17*T, 11*T
+  // PathAndObjects stall section: x=352-512, y=0-320
+  // We draw the stall as a 2-tile wide x 3-tile tall structure
+  // Awning (top): x=352, y=0,  160x96  -> draw as 2T wide x 2T tall
+  // Shelves (mid): x=352, y=96, 160x96  -> 2T wide x 1T tall
+  // Produce (bot): x=352, y=192,160x96  -> 2T wide x 1T tall
+
+  var ox=17*T, oy=11*T;
+  var p=sw(ox,oy);
+  var bsx=p.sx, bsy=p.sy;
+  var stallW=T*10, stallH=T*5;
+
+  if(poImg.complete&&poImg.naturalWidth>0) {
+    // Awning top section — striped canopy with shelf
+    // src: x=352, y=0, 160x96 (the awning+top shelf area)
+    X.drawImage(poImg,352,0,160,160,bsx,bsy,stallW,stallH);
+  } else {
+    // Fallback drawn stall
+    X.fillStyle=P.wd1;X.fillRect(bsx,bsy,stallW,stallH);
+    for(var i=0;i<stallW;i+=8) {
+      X.fillStyle=i%16===0?'#e0c020':'#c8a010';
+      X.fillRect(bsx+i,bsy-4,8,6);
+    }
   }
-  X.fillStyle=P.dk;X.fillRect(sx-1,sy-7,sw2+2,2);
-  // Awning shadow
-  X.fillStyle='rgba(0,0,0,0.2)';X.fillRect(sx,sy+2,sw2,3);
-  // Goods on counter (colorful blocks)
-  [[P.cr4,'#40a020'],[P.wa3,'#60c0f0']].forEach(([c1,c2],ci)=>{
-    X.fillStyle=c1;X.fillRect(sx+6+ci*T*2,sy+sh-T-6,T-4,6);
-    X.fillStyle=c2;X.fillRect(sx+8+ci*T*2,sy+sh-T-8,T-8,4);
-  });
-  // Posts
-  [sx+2,sx+sw2-4].forEach(px=>{
-    X.fillStyle=P.wd2;X.fillRect(px,sy-6,4,sh+6);
-  });
+
+  // Shadow under stall
+  X.fillStyle='rgba(0,0,0,0.18)';
+  X.fillRect(bsx+4,bsy+stallH,stallW-4,4);
 
   X.font='5px "Press Start 2P",monospace';X.textAlign='center';
-  X.fillStyle='rgba(6,4,2,0.7)';X.fillText('MARKET',sx+sw2/2+1,sy+sh+10);
-  X.fillStyle='#e0c020';X.fillText('MARKET',sx+sw2/2,sy+sh+9);
+  X.fillStyle='rgba(6,4,2,0.7)';X.fillText('MARKET',bsx+stallW/2+1,bsy+stallH+12);
+  X.fillStyle='#e0c020';X.fillText('MARKET',bsx+stallW/2,bsy+stallH+11);
 }
 
 // ── CAVE (Kenney stone castle style) ─────────────────────────────────
@@ -1160,7 +1251,8 @@ function drawCave() {
   }
 
   // Vines on sides
-  [[sx+2,sy+T],[sx+cw-10,sy+T]].forEach(([vx,vy])=>{
+  [[sx+2,sy+T],[sx+cw-10,sy+T]].forEach(function(vine){
+    var vx=vine[0],vy=vine[1];
     for(let vs=0;vs<4;vs++) {
       X.fillStyle=vs%2===0?P.cr2:P.cr1;
       X.fillRect(vx+vs%2*3,vy+vs*T/2,4,8);
@@ -1177,40 +1269,55 @@ function drawCave() {
 
 // ── HAY BALES ─────────────────────────────────────────────────────────
 function drawHayBales() {
-  [[7*T,11*T],[8*T,11*T],[7*T,12*T]].forEach(([bx,by])=>{
-    const {sx,sy}=sw(bx,by);
-    // Use PathAndObjects hay bale if available
-    if(poImg.complete&&poImg.naturalWidth>0) {
-      X.drawImage(poImg,192,288,64,64,sx,sy,T,T);
-    } else {
-      X.fillStyle='#c8a020';X.fillRect(sx+1,sy+2,T-2,T-3);
-      X.fillStyle='#a08010';X.fillRect(sx+2,sy+3,T-4,T-6);
-      // Straps
-      X.fillStyle='#806010';X.fillRect(sx+1,sy+T/3,T-2,2);
-      X.fillStyle='#806010';X.fillRect(sx+1,sy+2*T/3,T-2,2);
-    }
-  });
+  // Hay bales from PathAndObjects — round bales visible at bottom of stall section
+  // x=320, y=448 area has the hay bales (3 round bales)
+  // Draw as 2x1 tile cluster near the farmhouse (7*T, 11*T)
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+
+  // Main hay bale cluster: 2 wide x 1 tall at (7T, 11T)
+  var p1=sw(7*T,11*T);
+  if(loaded) {
+    // Draw the hay bale section from PathAndObjects
+    // The round hay bales are at x=320,y=448, 192x48 total
+    // Scale to 2T wide x 1T tall
+    X.drawImage(poImg,320,448,192,48,p1.sx,p1.sy,T*2,T);
+    // Second row
+    var p2=sw(7*T,12*T);
+    X.drawImage(poImg,320,448,192,48,p2.sx,p2.sy,T*2,T);
+  } else {
+    X.fillStyle='#c8a020';X.fillRect(p1.sx+1,p1.sy+2,T*2-2,T-3);
+    X.fillStyle='#806010';X.fillRect(p1.sx+1,p1.sy+T/3,T*2-2,2);
+  }
 }
 
 // ── BARREL CLUSTER ────────────────────────────────────────────────────
 function drawBarrels() {
-  [[8*T,9*T],[9*T,9*T]].forEach(([bx,by])=>{
-    const {sx,sy}=sw(bx+2,by+3);
-    // Barrel body
-    for(let p=0;p<3;p++) {
-      X.fillStyle=[P.wd2,P.wd3,P.wd2][p];
-      X.fillRect(sx+p*(T-4),sy,T-4,T+4);
-    }
-    // Barrel rings
-    for(let ring=0;ring<3;ring++) {
-      X.fillStyle=P.co2;X.fillRect(sx,sy+4+ring*T/3,T*3-6,3);
-    }
-  });
+  // Use PathAndObjects dock planks/storage as barrel/storage area near farmhouse
+  // Position: 8T,9T — show a fence panel + log pile
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+
+  // Dock/fence panel at (8T, 9T) — src x=64,y=352, 64x64
+  var p1=sw(8*T,9*T);
+  if(loaded) {
+    X.drawImage(poImg,64,352,64,64,p1.sx,p1.sy,T,T);
+    X.drawImage(poImg,64,352,64,64,p1.sx+T,p1.sy,T,T);
+  } else {
+    X.fillStyle=P.wd2;X.fillRect(p1.sx,p1.sy,T*2,T);
+  }
+
+  // Log pile at (8T,10T) — src x=192,y=288, 64x32
+  var p2=sw(8*T,10*T);
+  if(loaded) {
+    X.drawImage(poImg,192,304,64,32,p2.sx,p2.sy,T,T/2);
+  } else {
+    X.fillStyle=P.wd3;X.fillRect(p2.sx,p2.sy,T,T/2);
+  }
 }
 
 // ── SCARECROW ─────────────────────────────────────────────────────────
 function drawScarecrow() {
-  const {sx,sy}=sw(20*T,10*T);
+  var p=sw(20*T,10*T);
+  var sx=p.sx, sy=p.sy;
   // Post
   X.fillStyle=P.wd3;X.fillRect(sx+6,sy,3,T*2+2);
   // Arms
@@ -1228,50 +1335,100 @@ function drawScarecrow() {
   X.fillStyle='#c02018';X.fillRect(sx+6,sy-4,5,2);
 }
 
+function drawLogPile() {
+  // Log pile near farmhouse from PathAndObjects
+  // Source: two small log objects visible at x=192,y=308 and x=224,y=308
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  var p=sw(11*T,8*T);
+  if(loaded) {
+    // Log pile: use the object at x=192,y=288, 64x64
+    X.drawImage(poImg,192,288,32,48,p.sx,p.sy,T,T+4);
+    // Second log slightly offset
+    var p2=sw(12*T,8*T);
+    X.drawImage(poImg,224,288,32,48,p2.sx,p2.sy,T,T+4);
+  } else {
+    X.fillStyle=P.wd3;X.fillRect(p.sx+2,p.sy+4,T-4,T-4);
+  }
+}
+
 // ── FLOWERS ───────────────────────────────────────────────────────────
 function drawFlowers() {
-  [[3*T,13*T],[8*T,13*T],[18*T,12*T],[22*T,24*T],[7*T,25*T],[2*T,7*T],[15*T,10*T]].forEach(([fx,fy])=>{
-    const {sx,sy}=sw(fx+5,fy+7);
-    const v=((fx/T)*3+(fy/T)*7)%5;
-    const [[p1,p2]]=[['#d03060','#f8d030'],['#f0d020','#fff0a0'],['#f0f0e8','#f8d030'],['#8030b0','#f8d030'],['#d03060','#f0f0f0']][v]||['#d03060','#f8d030'];
-    // Stem
-    X.fillStyle=P.cr2;X.fillRect(sx+4,sy+8,2,9);
-    X.fillStyle=P.cr3;X.fillRect(sx+2,sy+11,5,3);
-    // Petals
-    X.fillStyle=p1;
-    [[2,3],[2,10],[0,6],[8,6],[5,3],[5,10]].forEach(([ox,oy])=>X.fillRect(sx+ox,sy+oy,4,4));
-    // Centre
-    X.fillStyle=p2;X.fillRect(sx+3,sy+6,4,5);
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  var positions=[[3*T,13*T],[8*T,13*T],[18*T,12*T],[22*T,24*T],[7*T,25*T],[2*T,7*T],[15*T,10*T]];
+
+  positions.forEach(function(fx_fy,idx) {
+    var fx=fx_fy[0], fy=fx_fy[1];
+    var p=sw(fx+4,fy+6);
+    var fsx=p.sx, fsy=p.sy;
+    var v=(Math.floor(fx/T)*3+Math.floor(fy/T)*7)%5;
+
+    // Every other flower uses the pot sprite from PathAndObjects
+    // Flower pot: x=416,y=288, 32x32
+    if(loaded&&idx%2===0) {
+      X.drawImage(poImg,416,288,32,32,fsx,fsy,T,T);
+    } else {
+      // Drawn flower
+      var cols=[['#d03060','#f8d030'],['#f0d020','#fff0a0'],['#f0f0e8','#f8d030'],['#8030b0','#f8d030'],['#d03060','#f0f0f0']];
+      var p1=cols[v][0], p2=cols[v][1];
+      X.fillStyle=P.cr2;X.fillRect(fsx+4,fsy+8,2,9);
+      X.fillStyle=P.cr3;X.fillRect(fsx+2,fsy+11,5,3);
+      X.fillStyle=p1;
+      [[2,3],[2,10],[0,6],[8,6],[5,3],[5,10]].forEach(function(o){X.fillRect(fsx+o[0],fsy+o[1],4,4);});
+      X.fillStyle=p2;X.fillRect(fsx+3,fsy+6,4,5);
+    }
   });
 }
 
 // ── MUSHROOMS ─────────────────────────────────────────────────────────
 function drawMushrooms() {
-  [[10*T,11*T],[17*T,8*T],[4*T,25*T],[25*T,14*T]].forEach(([mx,my])=>{
-    const {sx,sy}=sw(mx+3,my+5);
-    X.fillStyle='#e0e0c8';X.fillRect(sx+4,sy+9,6,7);
-    X.fillStyle='#b01808';X.fillRect(sx+1,sy+5,12,6);
-    X.fillStyle='#c82010';X.fillRect(sx,sy+2,14,5);
-    X.fillStyle='#f0f0e8';X.fillRect(sx+2,sy+3,3,3);X.fillRect(sx+9,sy+4,3,2);
+  // Keep pixel art mushrooms — they look good
+  // But add the dense grass patch sprite (x=64,y=288,64x32) as undergrowth
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  [[10*T,11*T],[17*T,8*T],[4*T,25*T],[25*T,14*T]].forEach(function(mx_my) {
+    var mx=mx_my[0], my=mx_my[1];
+    var p=sw(mx+3,my+5);
+    var msx=p.sx, msy=p.sy;
+    // Undergrowth behind mushroom
+    if(loaded) {
+      X.drawImage(poImg,64,288,64,32,msx-2,msy+8,T+4,T/2);
+    }
+    // Mushroom cap
+    X.fillStyle='#e0e0c8';X.fillRect(msx+4,msy+9,6,7);
+    X.fillStyle='#b01808';X.fillRect(msx+1,msy+5,12,6);
+    X.fillStyle='#c82010';X.fillRect(msx,msy+2,14,5);
+    X.fillStyle='#f0f0e8';X.fillRect(msx+2,msy+3,3,3);X.fillRect(msx+9,msy+4,3,2);
   });
 }
 
 // ── ROCKS ─────────────────────────────────────────────────────────────
 function drawRocks() {
-  [[3*T,12*T],[9*T,13*T],[20*T,11*T],[24*T,11*T]].forEach(([rx,ry])=>{
-    const {sx,sy}=sw(rx,ry);
-    X.fillStyle=P.co1;X.fillRect(sx+3,sy+8,18,11);
-    X.fillStyle=P.co2;X.fillRect(sx+4,sy+5,14,9);
-    X.fillStyle=P.co3;X.fillRect(sx+6,sy+4,10,6);
-    X.fillStyle=P.co4;X.fillRect(sx+8,sy+5,5,3);
-    X.fillStyle=P.sh;X.fillRect(sx+4,sy+18,18,3);
+  // Rocks scattered around the map — use cobble tile sliced small
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+  [[3*T,12*T],[9*T,13*T],[20*T,11*T],[24*T,11*T]].forEach(function(rx_ry) {
+    var rx=rx_ry[0], ry=rx_ry[1];
+    var p=sw(rx,ry);
+    var bsx3=p.sx, bsy3=p.sy;
+    var h=tileHash(rx/T,ry/T);
+    if(loaded) {
+      // Slice the center of a cobble tile (avoids grass border)
+      // cobble center is around x=20-76,y=116-172 in the 96x96 tile
+      var srcX=(h&1)?20:28;
+      var srcY=116+(h&2?8:0);
+      X.drawImage(poImg,srcX,srcY,52,52,bsx3+2,bsy3+4,T-4,T-6);
+    } else {
+      X.fillStyle=P.co1;X.fillRect(bsx3+3,bsy3+8,18,11);
+      X.fillStyle=P.co2;X.fillRect(bsx3+4,bsy3+5,14,9);
+      X.fillStyle=P.co3;X.fillRect(bsx3+6,bsy3+4,10,6);
+    }
+    X.fillStyle=P.sh;X.fillRect(bsx3+4,bsy3+T-3,T-4,3);
   });
 }
 
 // ── BUTTERFLIES ───────────────────────────────────────────────────────
 function drawButterflies() {
   const t=fc*0.016;
-  [[10,16,0],[16,8,1],[24,12,2],[7,22,3]].forEach(([bc,br,idx])=>{
+  [[10,16,0],[16,8,1],[24,12,2],[7,22,3]].forEach(function(bdata){
+    var bc=bdata[0],br=bdata[1],idx=bdata[2];
     const bxw=bc*T+Math.sin(t+idx*2.1)*18;
     const byw=br*T+Math.cos(t*1.3+idx*1.7)*11;
     const {sx,sy}=sw(bxw,byw);
@@ -1298,11 +1455,21 @@ function drawLabels() {
 
 // ── NPC ───────────────────────────────────────────────────────────────
 function drawNPC() {
-  const {sx,sy}=sw(9*T,8*T);
+  // Draw a decorative bush/shrub beside NPC using PathAndObjects bush sprite
+  var loaded=poImg.complete&&poImg.naturalWidth>0;
+
+  // Small bush decoration
+  var pb=sw(10*T,8*T);
+  if(loaded) {
+    X.drawImage(poImg,0,352,64,64,pb.sx,pb.sy,T,T);
+  }
+
+  // NPC character
+  var p=sw(9*T,8*T);
   if(npcImg.complete&&npcImg.naturalWidth>0) {
-    X.drawImage(npcImg,16,32,16,16,sx,sy,T,T);
+    X.drawImage(npcImg,16,32,16,16,p.sx,p.sy,T,T);
   } else {
-    X.fillStyle='#a06030';X.fillRect(sx+3,sy+3,T-6,T-6);
+    X.fillStyle='#a06030';X.fillRect(p.sx+3,p.sy+3,T-6,T-6);
   }
 }
 
@@ -1548,6 +1715,7 @@ function loop() {
   drawFlowers();
   drawHayBales();
   drawBarrels();
+  drawLogPile();
   drawScarecrow();
   drawMarketStall();
   drawGarden();
