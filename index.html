@@ -304,7 +304,7 @@ function defaultState() {
   CONFIG_ASSESSMENTS.forEach(a=>{ at[a.key]=false; });
   return {
     name:'', dp, qz, pr, at,
-    mail: CONFIG_MAIL.map(m=>{...m}),
+    mail: CONFIG_MAIL.map(m=>Object.assign({},m)),
     mailRead:[], stepCount:0, achievements:[],
   };
 }
@@ -325,7 +325,7 @@ function loadState() {
     if(s.mailRead)    ST.mailRead=s.mailRead;
     if(s.stepCount)   ST.stepCount=s.stepCount;
     if(s.achievements) ST.achievements=s.achievements;
-    ST.mail = CONFIG_MAIL.map(m=>{...m});
+    ST.mail = CONFIG_MAIL.map(m=>Object.assign({},m));
     return !!s.name;
   } catch(e) { return false; }
 }
