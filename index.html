@@ -1331,37 +1331,24 @@ function dpSt() {
 //  UI — Parchment-themed modals
 // ══════════════════════════════════════════════════════════════════════
 function saveNote() {
-  return `<div class="saveline${lastSaved?' ok':''}">${lastSaved?'Saved '+new Date(lastSaved).toLocaleTimeString():'Not yet saved'}</div>`;
+  return '<div class="saveline'+(lastSaved?' ok':'')+'">'+(lastSaved?'Saved '+new Date(lastSaved).toLocaleTimeString():'Not yet saved')+'</div>';
 }
 
 // ── SYLLABUS MODAL ────────────────────────────────────────────────────
 function hHTML() {
   const d=dpSt(), p=Math.round((d.conf+d.prog*0.5)/d.total*100);
-  let h=`
-    <div class="stats">
-      <div class="statbox"><div class="statlabel">CONFIDENT</div><div class="statval g">${d.conf}</div></div>
-      <div class="statbox"><div class="statlabel">IN PROGRESS</div><div class="statval o">${d.prog}</div></div>
-      <div class="statbox"><div class="statlabel">TOTAL</div><div class="statval d">${d.total}</div></div>
-    </div>
-    <div class="pbar"><div class="pbfill" style="width:${p}%"></div></div>
-    <p class="mnote">Click a dot point to cycle: not started &#8594; in progress &#8594; confident</p>
-    <div class="legend">
-      <div class="legitem"><div class="legbox none"></div>Not started</div>
-      <div class="legitem"><div class="legbox prog"></div>In progress</div>
-      <div class="legitem"><div class="legbox conf"></div>Confident</div>
-    </div>
-  `;
+  let h='<div class="stats">'+"<div class=\"statbox\"><div class=\"statlabel\">CONFIDENT</div><div class=\"statval g\">"+d.conf+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">IN PROGRESS</div><div class=\"statval o\">"+d.prog+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">TOTAL</div><div class=\"statval d\">"+d.total+"</div></div>"+"</div>"+"<div class=\"pbar\"><div class=\"pbfill\" style=\"width:"+p+"%\"></div></div>"+"<p class=\"mnote\">Click a dot point to cycle: not started &#8594; in progress &#8594; confident</p>"+"<div class=\"legend\">"+"<div class=\"legitem\"><div class=\"legbox none\"></div>Not started</div>"+"<div class=\"legitem\"><div class=\"legbox prog\"></div>In progress</div>"+"<div class=\"legitem\"><div class=\"legbox conf\"></div>Confident</div>"+"</div>";
   Object.keys(SYLLABUS).forEach(m=>{
-    h+=`<div class="msect"><div class="msectitle">${SYLLABUS[m].title}</div>`;
+    h+='<div class="msect"><div class="msectitle">'+(SYLLABUS[m].title)+'</div>';
     SYLLABUS[m].iq.forEach((q,qi)=>{
-      h+=`<div class="iqlabel">${q.label}</div>`;
+      h+='<div class="iqlabel">'+(q.label)+'</div>';
       q.points.forEach((pt,pi)=>{
         const k=m+'_'+qi+'_'+pi, s=ST.dp[k]||'none';
         const sym=s==='conf'?'&#10003;':s==='prog'?'&#126;':'';
-        h+=`<div class="dprow" data-k="${k}"><div class="dpbox ${s}">${sym}</div><div class="dptext">${pt}</div></div>`;
+        h+='<div class="dprow" data-k="'+(k)+'"><div class="dpbox '+(s)+'">'+(sym)+'</div><div class="dptext">'+(pt)+'</div></div>';
       });
     });
-    h+=`</div>`;
+    h+='</div>';
   });
   h+=saveNote();
   return h;
@@ -1383,21 +1370,15 @@ function treeHTML() {
   const stg=treeStage();
   const labs=['Bare sapling','First buds','Leaves appearing','Growing well','Full canopy','In full bloom'];
   const t=Object.keys(ST.qz).length, d=Object.values(ST.qz).filter(Boolean).length;
-  let h=`
-    <div class="stats">
-      <div class="statbox"><div class="statlabel">COMPLETED</div><div class="statval g">${d}/${t}</div></div>
-      <div class="statbox"><div class="statlabel">STAGE</div><div class="statval o" style="font-size:5.5px">${labs[stg]}</div></div>
-    </div>
-    <div class="pbar" style="margin-bottom:12px"><div class="pbfill" style="width:${Math.round(d/t*100)}%"></div></div>
-  `;
+  let h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">COMPLETED</div><div class=\"statval g\">"+d+"/"+t+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">STAGE</div><div class=\"statval o\" style=\"font-size:5.5px\">"+labs[stg]+"</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:12px\"><div class=\"pbfill\" style=\"width:"+Math.round(d/t*100)+"%\"></div></div>";
   Object.keys(QZ).forEach(m=>{
     const md=QZ[m].filter((_,i)=>ST.qz[m+'_'+i]).length;
-    h+=`<div class="msect"><div class="grouphead">${SYLLABUS[m].title.split(':')[1].trim()} &#8212; ${md}/${QZ[m].length}</div>`;
+    h+='<div class="msect"><div class="grouphead">'+(SYLLABUS[m].title.split(':')[1].trim())+' &#8212; '+(md)+'/'+(QZ[m].length)+'</div>';
     QZ[m].forEach((q,i)=>{
       const k=m+'_'+i, dn=ST.qz[k];
-      h+=`<div class="qrow" data-k="${k}"><div class="qlabel">${q}</div><div class="qcheck ${dn?'done':''}">${dn?'&#10003;':''}</div></div>`;
+      h+='<div class="qrow" data-k="'+(k)+'"><div class="qlabel">'+(q)+'</div><div class="qcheck '+(dn?'done':'')+'">'+(dn?'&#10003;':'')+'</div></div>';
     });
-    h+=`</div>`;
+    h+='</div>';
   });
   h+=saveNote();
   return h;
@@ -1420,14 +1401,10 @@ function attachQZ() {
 
 // ── GARDEN MODAL ─────────────────────────────────────────────────────
 function gardenHTML() {
-  let h=`<p class="mnote">Mark a bed complete when you have submitted or sat the task.</p>`;
+  let h='<p class="mnote">Mark a bed complete when you have submitted or sat the task.</p>';
   CONFIG_ASSESSMENTS.forEach(b=>{
     const dn=ST.at[b.key];
-    h+=`<div class="bedbox">
-      <div class="bedtitle">${b.label}</div>
-      <div class="bedsub">${b.desc} &nbsp;|&nbsp; ${b.term}</div>
-      <button class="bedbtn${dn?' done':''}" data-k="${b.key}">${dn?'HARVESTED &#10003;':'MARK COMPLETE'}</button>
-    </div>`;
+    h+="<div class=\"bedbox\">"+"<div class=\"bedtitle\">"+b.label+"</div>"+"<div class=\"bedsub\">"+b.desc+" | "+b.term+"</div>"+"<button class=\"bedbtn"+(dn?" done":"")+" data-k=\""+b.key+"\">"+( dn?"HARVESTED &#10003;":"MARK COMPLETE")+"</button>"+"</div>";
   });
   h+=saveNote();
   return h;
@@ -1447,17 +1424,10 @@ function attachG() {
 function wellHTML() {
   const dn=Object.values(ST.pr).filter(Boolean).length;
   const lv=Math.round(dn/PR.length*100);
-  let h=`
-    <div class="stats">
-      <div class="statbox"><div class="statlabel">LOGGED</div><div class="statval g">${dn}/${PR.length}</div></div>
-      <div class="statbox"><div class="statlabel">WELL LEVEL</div><div class="statval o">${lv}%</div></div>
-    </div>
-    <div class="pbar" style="margin-bottom:10px"><div class="pbfill" style="width:${lv}%;background:#4898d0"></div></div>
-    <p class="mnote">Click to log completed practicals.</p>
-  `;
+  let h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">LOGGED</div><div class=\"statval g\">"+dn+"/"+PR.length+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">WELL LEVEL</div><div class=\"statval o\">"+lv+"%</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:10px\"><div class=\"pbfill\" style=\"width:"+lv+"%;background:#4898d0\"></div></div>"+"<p class=\"mnote\">Click to log completed practicals.</p>";
   PR.forEach((p,i)=>{
     const k='p'+i, done=ST.pr[k];
-    h+=`<div class="practrow" data-k="${k}"><div class="qlabel">${p}</div><div class="qcheck${done?' done':''}">${done?'&#10003;':''}</div></div>`;
+    h+='<div class="practrow" data-k="'+(k)+'"><div class="qlabel">'+(p)+'</div><div class="qcheck'+(done?' done':'')+'">'+(done?'&#10003;':'')+'</div></div>';
   });
   h+=saveNote();
   return h;
@@ -1475,14 +1445,14 @@ function attachW() {
 
 // ── MAIL MODAL ────────────────────────────────────────────────────────
 function mailHTML() {
-  if(!ST.mail.length) return`<p class="mnote">No messages yet.</p>`;
+  if(!ST.mail.length) return'<p class="mnote">No messages yet.</p>';
   return ST.mail.map((m,i)=>{
     const n=!ST.mailRead.includes(i);
-    return`<div class="mailmsg${n?' mailnew':''}">
-      <div class="mailfrom">FROM: ${m.from} ${n?'<span style="color:#6878c8">[NEW]</span>':''}</div>
-      <div class="mailsubj">${m.subject}</div>
-      <div class="mailbody">${m.body}</div>
-    </div>`;
+    return "<div class=\"mailmsg"+(n?" mailnew":"")+"\">"
+      +"<div class=\"mailfrom\">FROM: "+m.from+" "+(n?"<span style=\"color:#6878c8\">[NEW]</span>":"")+"</div>"
+      +"<div class=\"mailsubj\">"+m.subject+"</div>"
+      +"<div class=\"mailbody\">"+m.body+"</div>"
+      +"</div>";
   }).join('');
 }
 
@@ -1503,7 +1473,7 @@ function openM(id) {
   }
   else if(id==='cave') {
     t.textContent='CAVE — EXTENSION';
-    b.innerHTML=`<p style="color:#406080;font-size:6px;line-height:2.2">The vines part. You step inside.<br><br>This space will hold extension content &#8212; beyond-syllabus resources, challenge questions, and depth study material.<br><br>${CONFIG_TEACHER} will add content here throughout the year.</p>`;
+    b.innerHTML='<p style="color:#406080;font-size:6px;line-height:2.2">The vines part. You step inside.<br><br>This space will hold extension content &#8212; beyond-syllabus resources, challenge questions, and depth study material.<br><br>'+(CONFIG_TEACHER)+' will add content here throughout the year.</p>';
   }
 }
 
