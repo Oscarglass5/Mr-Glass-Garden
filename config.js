@@ -320,3 +320,34 @@ const CONFIG_ACHIEVEMENTS = [
     check: (ST) => ST.stepCount >= 1000,
   },
 ];
+
+
+// ── DEMO MODE ─────────────────────────────────────────────────────────
+// Set to true to cycle through all times of day quickly in class.
+// Each cycle takes ~30 seconds when enabled. Set back to false normally.
+const CONFIG_DEMO_MODE = false;
+
+// ── NPC DAILY MESSAGES ────────────────────────────────────────────────
+// Mr Glass says one of these when the player first approaches each day.
+// Add or change lines freely — one is picked based on the day of the week.
+const CONFIG_NPC_MESSAGES = [
+  'Good to see you back. The garden keeps growing when you do.',
+  'Don't forget the cave unlocks at 75% confident dot points.',
+  'Mark a dot point in progress today — even one.',
+  'The well fills as you log your practicals. How many are left?',
+  'Check the mailbox — there may be something new.',
+  'A full study tree takes the whole year. Keep going.',
+  'Year 11 Biology is a long game. Every session counts.',
+];
+
+// ── FIRST VISIT GREETING ──────────────────────────────────────────────
+// Shown once, the very first time a student enters the garden.
+const CONFIG_FIRST_VISIT_GREETING = [
+  'Welcome to the garden. This space is yours for Year 11 Biology.',
+  'Walk to each building and press E to open it.',
+  'The Farmhouse tracks your dot points. The Well logs your practicals.',
+  'The Study Tree grows as you complete Canvas quizzes.',
+  'The Garden beds mark your assessment tasks.',
+  'When 75% of dot points are confident — the Cave unlocks.',
+  'See you in class, ' // student name appended at runtime
+];
