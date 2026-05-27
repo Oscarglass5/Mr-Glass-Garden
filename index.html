@@ -1704,15 +1704,15 @@ function saveNote(){
 
 // Modal HTML functions — copy from existing file
 function hHTML() {
-  const d=dpSt(), p=Math.round((d.conf+d.prog*0.5)/d.total*100);
-  let h='<div class="stats">'+"<div class=\"statbox\"><div class=\"statlabel\">CONFIDENT</div><div class=\"statval g\">"+d.conf+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">IN PROGRESS</div><div class=\"statval o\">"+d.prog+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">TOTAL</div><div class=\"statval d\">"+d.total+"</div></div>"+"</div>"+"<div class=\"pbar\"><div class=\"pbfill\" style=\"width:"+p+"%;background:"+pbGradient(p)+";\"></div></div>"+"<p class=\"mnote\">Click a dot point to cycle: not started &#8594; in progress &#8594; confident</p>"+"<div class=\"legend\">"+"<div class=\"legitem\"><div class=\"legbox none\"></div>Not started</div>"+"<div class=\"legitem\"><div class=\"legbox prog\"></div>In progress</div>"+"<div class=\"legitem\"><div class=\"legbox conf\"></div>Confident</div>"+"</div>";
-  Object.keys(SYLLABUS).forEach(m=>{
+  var d=dpSt(), p=Math.round((d.conf+d.prog*0.5)/d.total*100);
+  var h='<div class="stats">'+"<div class=\"statbox\"><div class=\"statlabel\">CONFIDENT</div><div class=\"statval g\">"+d.conf+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">IN PROGRESS</div><div class=\"statval o\">"+d.prog+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">TOTAL</div><div class=\"statval d\">"+d.total+"</div></div>"+"</div>"+"<div class=\"pbar\"><div class=\"pbfill\" style=\"width:"+p+"%;background:"+pbGradient(p)+";\"></div></div>"+"<p class=\"mnote\">Click a dot point to cycle: not started &#8594; in progress &#8594; confident</p>"+"<div class=\"legend\">"+"<div class=\"legitem\"><div class=\"legbox none\"></div>Not started</div>"+"<div class=\"legitem\"><div class=\"legbox prog\"></div>In progress</div>"+"<div class=\"legitem\"><div class=\"legbox conf\"></div>Confident</div>"+"</div>";
+  Object.keys(SYLLABUS).forEach(function(m) {
     h+='<div class="msect"><div class="msectitle">'+(SYLLABUS[m].title)+'</div>';
-    SYLLABUS[m].iq.forEach((q,qi)=>{
+    SYLLABUS[m].iq.forEachfunction((q,qi) {
       h+='<div class="iqlabel">'+(q.label)+'</div>';
-      q.points.forEach((pt,pi)=>{
-        const k=m+'_'+qi+'_'+pi, s=ST.dp[k]||'none';
-        const sym=s==='conf'?'&#10003;':s==='prog'?'&#126;':'';
+      q.points.forEachfunction((pt,pi) {
+        var k=m+'_'+qi+'_'+pi, s=ST.dp[k]||'none';
+        var sym=s==='conf'?'&#10003;':s==='prog'?'&#126;':'';
         h+='<div class="dprow" data-k="'+(k)+'"><div class="dpbox '+(s)+'">'+(sym)+'</div><div class="dptext">'+(pt)+'</div></div>';
       });
     });
@@ -1722,10 +1722,10 @@ function hHTML() {
   return h;
 }
 function attachDP() {
-  document.querySelectorAll('.dprow').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const k=el.dataset.k, c=ST.dp[k]||'none';
-      const n=c==='none'?'prog':c==='prog'?'conf':'none';
+  document.querySelectorAll('.dprow').forEach(function(el) {
+    el.addEventListener('click',function() {
+      var k=el.dataset.k, c=ST.dp[k]||'none';
+      var n=c==='none'?'prog':c==='prog'?'conf':'none';
       ST.dp[k]=n; scheduleSave(); checkAchievements();
       document.getElementById('mbody').innerHTML=hHTML(); attachDP();
       if(n==='conf') showToast('Dot point marked confident');
@@ -1735,15 +1735,15 @@ function attachDP() {
 
 // ── QUIZ TREE MODAL ───────────────────────────────────────────────────
 function treeHTML() {
-  const stg=treeStage();
-  const labs=['Bare sapling','First buds','Leaves appearing','Growing well','Full canopy','In full bloom'];
-  const t=Object.keys(ST.qz).length, d=Object.values(ST.qz).filter(Boolean).length;
-  let h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">COMPLETED</div><div class=\"statval g\">"+d+"/"+t+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">STAGE</div><div class=\"statval o\" style=\"font-size:5.5px\">"+labs[stg]+"</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:12px\"><div class=\"pbfill\" style=\"width:"+Math.round(d/t*100)+"%;background:"+pbGradient(Math.round(d/t*100))+";\"></div></div>";
-  Object.keys(QZ).forEach(m=>{
-    const md=QZ[m].filter((_,i)=>ST.qz[m+'_'+i]).length;
+  var stg=treeStage();
+  var labs=['Bare sapling','First buds','Leaves appearing','Growing well','Full canopy','In full bloom'];
+  var qt=Object.keys(ST.qz).length, d=Object.values(ST.qz).filter(Boolean).length;
+  var h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">COMPLETED</div><div class=\"statval g\">"+d+"/"+t+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">STAGE</div><div class=\"statval o\" style=\"font-size:5.5px\">"+labs[stg]+"</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:12px\"><div class=\"pbfill\" style=\"width:"+Math.round(d/qt*100)+"%;background:"+pbGradient(Math.round(d/qt*100))+";\"></div></div>";
+  Object.keys(QZ).forEach(function(m) {
+    var md=QZ[m].filter(function(_,i){return ST.qz[m+'_'+i];}).length;
     h+='<div class="msect"><div class="grouphead">'+(SYLLABUS[m].title.split(':')[1].trim())+' &#8212; '+(md)+'/'+(QZ[m].length)+'</div>';
-    QZ[m].forEach((q,i)=>{
-      const k=m+'_'+i, dn=ST.qz[k];
+    QZ[m].forEachfunction((q,i) {
+      var k=m+'_'+i, dn=ST.qz[k];
       h+='<div class="qrow" data-k="'+(k)+'"><div class="qlabel">'+(q)+'</div><div class="qcheck '+(dn?'done':'')+'">'+(dn?'&#10003;':'')+'</div></div>';
     });
     h+='</div>';
@@ -1752,15 +1752,15 @@ function treeHTML() {
   return h;
 }
 function attachQZ() {
-  document.querySelectorAll('.qrow').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const prev=treeStage();
+  document.querySelectorAll('.qrow').forEach(function(el) {
+    el.addEventListener('click',function() {
+      var prev=treeStage();
       ST.qz[el.dataset.k]=!ST.qz[el.dataset.k];
       scheduleSave(); checkAchievements();
       document.getElementById('mbody').innerHTML=treeHTML(); attachQZ();
-      const cur=treeStage();
+      var cur=treeStage();
       if(cur>prev) {
-        const labs=['','First buds appeared!','Leaves are growing!','The tree is thriving!','Full canopy reached!','The tree is in full bloom!'];
+        var labs=['','First buds appeared!','Leaves are growing!','The tree is thriving!','Full canopy reached!','The tree is in full bloom!'];
         showToast(labs[cur]);
       }
     });
@@ -1769,17 +1769,17 @@ function attachQZ() {
 
 // ── GARDEN MODAL ─────────────────────────────────────────────────────
 function gardenHTML() {
-  let h='<p class="mnote">Mark a bed complete when you have submitted or sat the task.</p>';
-  CONFIG_ASSESSMENTS.forEach(b=>{
-    const dn=ST.at[b.key];
+  var h='<p class="mnote">Mark a bed complete when you have submitted or sat the task.</p>';
+  CONFIG_ASSESSMENTS.forEach(function(b) {
+    var dn=ST.at[b.key];
     h+="<div class=\"bedbox\">"+"<div class=\"bedtitle\">"+b.label+"</div>"+"<div class=\"bedsub\">"+b.desc+" | "+b.term+"</div>"+"<button class=\"bedbtn"+(dn?" done":"")+" data-k=\""+b.key+"\">"+( dn?"HARVESTED &#10003;":"MARK COMPLETE")+"</button>"+"</div>";
   });
   h+=saveNote();
   return h;
 }
 function attachG() {
-  document.querySelectorAll('.bedbtn:not(.done)').forEach(el=>{
-    el.addEventListener('click',()=>{
+  document.querySelectorAll('.bedbtn:not(.done)').forEach(function(el) {
+    el.addEventListener('click',function() {
       ST.at[el.dataset.k]=true;
       scheduleSave(); checkAchievements();
       showToast('Assessment bed harvested!');
@@ -1790,19 +1790,19 @@ function attachG() {
 
 // ── WELL MODAL ────────────────────────────────────────────────────────
 function wellHTML() {
-  const dn=Object.values(ST.pr).filter(Boolean).length;
-  const lv=Math.round(dn/PR.length*100);
-  let h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">LOGGED</div><div class=\"statval g\">"+dn+"/"+PR.length+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">WELL LEVEL</div><div class=\"statval o\">"+lv+"%</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:10px\"><div class=\"pbfill\" style=\"width:"+lv+"%;background:"+pbGradient(lv)+";\"></div></div>"+"<p class=\"mnote\">Click to log completed practicals.</p>";
-  PR.forEach((p,i)=>{
-    const k='p'+i, done=ST.pr[k];
+  var dn=Object.values(ST.pr).filter(Boolean).length;
+  var lv=Math.round(dn/PR.length*100);
+  var h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">LOGGED</div><div class=\"statval g\">"+dn+"/"+PR.length+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">WELL LEVEL</div><div class=\"statval o\">"+lv+"%</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:10px\"><div class=\"pbfill\" style=\"width:"+lv+"%;background:"+pbGradient(lv)+";\"></div></div>"+"<p class=\"mnote\">Click to log completed practicals.</p>";
+  PR.forEachfunction((p,i) {
+    var k='p'+i, done=ST.pr[k];
     h+='<div class="practrow" data-k="'+(k)+'"><div class="qlabel">'+(p)+'</div><div class="qcheck'+(done?' done':'')+'">'+(done?'&#10003;':'')+'</div></div>';
   });
   h+=saveNote();
   return h;
 }
 function attachW() {
-  document.querySelectorAll('.practrow').forEach(el=>{
-    el.addEventListener('click',()=>{
+  document.querySelectorAll('.practrow').forEach(function(el) {
+    el.addEventListener('click',function() {
       ST.pr[el.dataset.k]=!ST.pr[el.dataset.k];
       scheduleSave();
       document.getElementById('mbody').innerHTML=wellHTML(); attachW();
@@ -1814,8 +1814,8 @@ function attachW() {
 // ── MAIL MODAL ────────────────────────────────────────────────────────
 function mailHTML() {
   if(!ST.mail.length) return'<p class="mnote">No messages yet.</p>';
-  return ST.mail.map((m,i)=>{
-    const n=!ST.mailRead.includes(i);
+  return ST.mail.mapfunction((m,i) {
+    var n=!ST.mailRead.includes(i);
     return "<div class=\"mailmsg"+(n?" mailnew":"")+"\">"
       +"<div class=\"mailfrom\">FROM: "+m.from+" "+(n?"<span style=\"color:#6878c8\">[NEW]</span>":"")+"</div>"
       +"<div class=\"mailsubj\">"+m.subject+"</div>"
@@ -1828,37 +1828,37 @@ function mailHTML() {
 function openM(id) {
   modalOpen=true;
   document.getElementById('mo').classList.add('open');
-  const t=document.getElementById('mt'), b=document.getElementById('mbody');
+  var mt=document.getElementById('mt'), b=document.getElementById('mbody');
   if(id==='house') {
     var ico=tileIconURL(0,6);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'FARMHOUSE — SYLLABUS';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'FARMHOUSE — SYLLABUS';
     b.innerHTML=hHTML(); attachDP();
   }
   else if(id==='tree') {
     var ico=tileIconURL(5,0);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'STUDY TREE — QUIZZES';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'STUDY TREE — QUIZZES';
     b.innerHTML=treeHTML(); attachQZ();
   }
   else if(id==='garden') {
     var ico=tileIconURL(7,9);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'GARDEN — ASSESSMENTS';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'GARDEN — ASSESSMENTS';
     b.innerHTML=gardenHTML(); attachG();
   }
   else if(id==='well') {
     var ico=tileIconURL(9,8);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'WELL — PRACTICALS';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'WELL — PRACTICALS';
     b.innerHTML=wellHTML(); attachW();
   }
   else if(id==='mailbox'||id==='market') {
     var ico=tileIconURL(8,9);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'MAILBOX — MESSAGES';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'MAILBOX — MESSAGES';
     b.innerHTML=mailHTML();
-    ST.mail.forEach((_,i)=>{ if(!ST.mailRead.includes(i)) ST.mailRead.push(i); });
+    ST.mail.forEachfunction((_,i) { if(!ST.mailRead.includes(i)) ST.mailRead.push(i); });
     scheduleSave();
   }
   else if(id==='cave') {
     var ico=tileIconURL(3,9);
-    t.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'CAVE — EXTENSION';
+    mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'CAVE — EXTENSION';
     b.innerHTML='<p style="color:#406080;font-size:6px;line-height:2.2">The vines part. You step inside.<br><br>This space will hold extension content &#8212; beyond-syllabus resources, challenge questions, and depth study material.<br><br>'+(CONFIG_TEACHER)+' will add content here throughout the year.</p>';
   }
 }
@@ -1866,14 +1866,15 @@ function openM(id) {
 // ══════════════════════════════════════════════════════════════════════
 //  TOAST, DIALOG, KEYBOARD
 // ══════════════════════════════════════════════════════════════════════
-function showToast(msg, dur=2800) {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.style.display='block';
-  clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',dur);
+function showToast(msg, dur) {
+  dur = dur || 2800;
+  var tel=document.getElementById('toast');
+  tel.textContent=msg; tel.style.display='block';
+  clearTimeout(tel._t); tel._t=setTimeout(function() { tel.style.display='none'; }, dur);
 }
 
 function startDialog(id) {
-  const lines=(CONFIG_DIALOGS[id]||[]).filter(s=>s.length>0);
+  var lines=(CONFIG_DIALOGS[id]||[]).filter(function(s){return s.length>0;});
   if(!lines.length) return;
   dlgQueue=lines; dlgIdx=0; showDlgFrame();
 }
@@ -1890,16 +1891,16 @@ function closeDlg() {
 function advanceDlg() { if(dlgQueue.length){ dlgIdx++; showDlgFrame(); } }
 
 function doInteract() {
-  const o=nearObj(); if(!o) return;
+  var o=nearObj(); if(!o) return;
   startDialog(o.id);
-  setTimeout(()=>{
-    const d=dpSt();
+  setTimeout(function() {
+    var d=dpSt();
     if(o.id==='cave'&&d.total>0&&d.conf/d.total<0.75) return;
     openM(o.id);
   },100);
 }
 
-document.addEventListener('keydown',e=>{
+document.addEventListener('keydown',function(e) {
   K[e.key]=true;
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
   if(e.key===' '||e.key==='Enter') { if(dlgQueue.length){ advanceDlg(); return; } }
@@ -1909,8 +1910,8 @@ document.addEventListener('keydown',e=>{
     modalOpen=false;
   }
 });
-document.addEventListener('keyup',e=>{ K[e.key]=false; });
-document.getElementById('mclose').addEventListener('click',()=>{
+document.addEventListener('keyup',function(e) { K[e.key]=false; });
+document.getElementById('mclose').addEventListener('click',function() {
   document.getElementById('mo').classList.remove('open');
   modalOpen=false;
 });
