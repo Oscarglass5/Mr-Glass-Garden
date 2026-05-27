@@ -1711,9 +1711,9 @@ function hHTML() {
   var h='<div class="stats">'+"<div class=\"statbox\"><div class=\"statlabel\">CONFIDENT</div><div class=\"statval g\">"+d.conf+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">IN PROGRESS</div><div class=\"statval o\">"+d.prog+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">TOTAL</div><div class=\"statval d\">"+d.total+"</div></div>"+"</div>"+"<div class=\"pbar\"><div class=\"pbfill\" style=\"width:"+p+"%;background:"+pbGradient(p)+";\"></div></div>"+"<p class=\"mnote\">Click a dot point to cycle: not started &#8594; in progress &#8594; confident</p>"+"<div class=\"legend\">"+"<div class=\"legitem\"><div class=\"legbox none\"></div>Not started</div>"+"<div class=\"legitem\"><div class=\"legbox prog\"></div>In progress</div>"+"<div class=\"legitem\"><div class=\"legbox conf\"></div>Confident</div>"+"</div>";
   Object.keys(SYLLABUS).forEach(function(m) {
     h+='<div class="msect"><div class="msectitle">'+(SYLLABUS[m].title)+'</div>';
-    SYLLABUS[m].iq.forEachfunction((q,qi) {
+    SYLLABUS[m].iq.forEach(function(q,qi) {
       h+='<div class="iqlabel">'+(q.label)+'</div>';
-      q.points.forEachfunction((pt,pi) {
+      q.points.forEach(function(pt,pi) {
         var k=m+'_'+qi+'_'+pi, s=ST.dp[k]||'none';
         var sym=s==='conf'?'&#10003;':s==='prog'?'&#126;':'';
         h+='<div class="dprow" data-k="'+(k)+'"><div class="dpbox '+(s)+'">'+(sym)+'</div><div class="dptext">'+(pt)+'</div></div>';
@@ -1745,7 +1745,7 @@ function treeHTML() {
   Object.keys(QZ).forEach(function(m) {
     var md=QZ[m].filter(function(_,i){return ST.qz[m+'_'+i];}).length;
     h+='<div class="msect"><div class="grouphead">'+(SYLLABUS[m].title.split(':')[1].trim())+' &#8212; '+(md)+'/'+(QZ[m].length)+'</div>';
-    QZ[m].forEachfunction((q,i) {
+    QZ[m].forEach(function(q,i) {
       var k=m+'_'+i, dn=ST.qz[k];
       h+='<div class="qrow" data-k="'+(k)+'"><div class="qlabel">'+(q)+'</div><div class="qcheck '+(dn?'done':'')+'">'+(dn?'&#10003;':'')+'</div></div>';
     });
@@ -1796,7 +1796,7 @@ function wellHTML() {
   var dn=Object.values(ST.pr).filter(Boolean).length;
   var lv=Math.round(dn/PR.length*100);
   var h="<div class=\"stats\">"+"<div class=\"statbox\"><div class=\"statlabel\">LOGGED</div><div class=\"statval g\">"+dn+"/"+PR.length+"</div></div>"+"<div class=\"statbox\"><div class=\"statlabel\">WELL LEVEL</div><div class=\"statval o\">"+lv+"%</div></div>"+"</div>"+"<div class=\"pbar\" style=\"margin-bottom:10px\"><div class=\"pbfill\" style=\"width:"+lv+"%;background:"+pbGradient(lv)+";\"></div></div>"+"<p class=\"mnote\">Click to log completed practicals.</p>";
-  PR.forEachfunction((p,i) {
+  PR.forEach(function(p,i) {
     var k='p'+i, done=ST.pr[k];
     h+='<div class="practrow" data-k="'+(k)+'"><div class="qlabel">'+(p)+'</div><div class="qcheck'+(done?' done':'')+'">'+(done?'&#10003;':'')+'</div></div>';
   });
@@ -1817,7 +1817,7 @@ function attachW() {
 // ── MAIL MODAL ────────────────────────────────────────────────────────
 function mailHTML() {
   if(!ST.mail.length) return'<p class="mnote">No messages yet.</p>';
-  return ST.mail.mapfunction((m,i) {
+  return ST.mail.map(function(m,i) {
     var n=!ST.mailRead.includes(i);
     return "<div class=\"mailmsg"+(n?" mailnew":"")+"\">"
       +"<div class=\"mailfrom\">FROM: "+m.from+" "+(n?"<span style=\"color:#6878c8\">[NEW]</span>":"")+"</div>"
@@ -1856,7 +1856,7 @@ function openM(id) {
     var ico=tileIconURL(8,9);
     mt.innerHTML=(ico?'<img class="mbicon" src="'+ico+'">':"")+'MAILBOX — MESSAGES';
     b.innerHTML=mailHTML();
-    ST.mail.forEachfunction((_,i) { if(!ST.mailRead.includes(i)) ST.mailRead.push(i); });
+    ST.mail.forEach(function(_,i) { if(!ST.mailRead.includes(i)) ST.mailRead.push(i); });
     scheduleSave();
   }
   else if(id==='cave') {
