@@ -28,7 +28,157 @@ function defaultState(){
   });
   var pr = {}; CONFIG_PRACTICALS.forEach(function(_,i){ pr['p'+i] = false; });
   var at = {}; (CONFIG_ASSESSMENTS||[]).forEach(function(a){ at[a.key] = false; });
-  return { dp:dp, qz:qz, pr:pr, at:at, mailRead:[], achievements:[] };
+  return {
+    dp:dp, qz:qz, pr:pr, at:at,
+    mailRead:[], achievements:[],
+    // Character appearance — null means "use the sprite's original colour"
+    appearance: { hair:null, skin:null, clothes:null, eyes:null }
+  };
+}
+
+// Garden-themed colour palettes for character customisation.
+// Picked to feel cozy and natural rather than cartoon-bright.
+var CHAR_PALETTES = {
+  hair: [
+    { name:'Black',     hex:'#1a1410' },
+    { name:'Brown',     hex:'#5c3a20' },
+    { name:'Auburn',    hex:'#8b3a1a' },
+    { name:'Blonde',    hex:'#d4a868' },
+    { name:'Ginger',    hex:'#c0501c' },
+    { name:'Silver',    hex:'#a8a8b0' },
+    { name:'Lavender',  hex:'#6a5a8a' },
+    { name:'Forest',    hex:'#3a5a3a' }
+  ],
+  skin: [
+    { name:'Porcelain', hex:'#f0d4b0' },
+    { name:'Fair',      hex:'#e0b890' },
+    { name:'Olive',     hex:'#c89668' },
+    { name:'Tan',       hex:'#a87848' },
+    { name:'Sienna',    hex:'#80502c' },
+    { name:'Mahogany',  hex:'#503018' }
+  ],
+  clothes: [
+    { name:'Sky',       hex:'#5a98c8' },
+    { name:'Sage',      hex:'#7ca068' },
+    { name:'Wheat',     hex:'#c8a868' },
+    { name:'Brick',     hex:'#a04830' },
+    { name:'Plum',      hex:'#6a3a60' },
+    { name:'Charcoal',  hex:'#3a3a3a' },
+    { name:'Forest',    hex:'#3a6a40' },
+    { name:'Ochre',     hex:'#9a6a20' }
+  ],
+  eyes: [
+    { name:'Brown',     hex:'#5a3818' },
+    { name:'Hazel',     hex:'#8a6028' },
+    { name:'Blue',      hex:'#4a78a8' },
+    { name:'Green',     hex:'#4a8a48' },
+    { name:'Grey',      hex:'#888890' },
+    { name:'Amber',     hex:'#b87830' }
+  ]
+};
+
+// Convert hex '#rrggbb' to {r,g,b}
+function hexToRgb(hex){
+  var n = parseInt(hex.slice(1), 16);
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+}
+// RGB -> HSL
+function rgbToHsl(r, g, b){
+  r/=255; g/=255; b/=255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max===min){ h = s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h = (g-b)/d + (g<b?6:0); break;
+      case g: h = (b-r)/d + 2; break;
+      case b: h = (r-g)/d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h, s, l];
+}
+function hslToRgb(h, s, l){
+  var r, g, b;
+  if (s===0){ r = g = b = l; }
+  else {
+    function hue2rgb(p, q, t){
+      if (t<0) t+=1;
+      if (t>1) t-=1;
+      if (t<1/6) return p + (q-p)*6*t;
+      if (t<1/2) return q;
+      if (t<2/3) return p + (q-p)*(2/3-t)*6;
+      return p;
+    }
+    var q = l < 0.5 ? l*(1+s) : l+s-l*s;
+    var p = 2*l - q;
+    r = hue2rgb(p, q, h+1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h-1/3);
+  }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+}
+
+// Classify a pixel's body-part category. Returns 'hair'|'skin'|'clothes'|null.
+// Heuristics derived from the Player.png HSV clusters: dark pixels = hair,
+// warm peachy mid-V = skin, blue mid-saturation = clothes. Everything else
+// (eyes, shoes, leather, edge anti-alias) is left as-is.
+function classifyPixel(r, g, b){
+  var hsl = rgbToHsl(r, g, b);
+  var hue = hsl[0], sat = hsl[1], lum = hsl[2];
+  // Hair = very dark (low luminance)
+  if (lum < 0.18) return 'hair';
+  // Skin = warm hue, mid-high luminance, low-mid saturation
+  if ((hue < 0.10 || hue > 0.92) && lum > 0.45 && sat > 0.10 && sat < 0.65) return 'skin';
+  // Clothes = blueish hue with reasonable saturation
+  if (hue >= 0.50 && hue <= 0.72 && sat > 0.18) return 'clothes';
+  return null;
+}
+
+// Recolour the player sprite based on user's chosen palette hexes.
+// Stores the result as a new texture under key 'player' (replacing the original).
+function applyAppearance(scene){
+  if (!ST || !ST.appearance) return;
+  var srcKey = 'player_src';
+  // Stash the untouched original under 'player_src' on first call
+  if (!scene.textures.exists(srcKey)){
+    var origImg = scene.textures.get('player').getSourceImage();
+    var origCnv = document.createElement('canvas');
+    origCnv.width = origImg.width; origCnv.height = origImg.height;
+    origCnv.getContext('2d').drawImage(origImg, 0, 0);
+    scene.textures.addCanvas(srcKey, origCnv);
+  }
+  var srcImg = scene.textures.get(srcKey).getSourceImage();
+  var w = srcImg.width, h = srcImg.height;
+  var cnv = document.createElement('canvas');
+  cnv.width = w; cnv.height = h;
+  var ctx = cnv.getContext('2d');
+  ctx.drawImage(srcImg, 0, 0);
+  var ap = ST.appearance;
+  if (ap.hair || ap.skin || ap.clothes){
+    var imgd = ctx.getImageData(0, 0, w, h);
+    var d = imgd.data;
+    var targets = {
+      hair:    ap.hair    ? rgbToHsl(hexToRgb(ap.hair).r,    hexToRgb(ap.hair).g,    hexToRgb(ap.hair).b)    : null,
+      skin:    ap.skin    ? rgbToHsl(hexToRgb(ap.skin).r,    hexToRgb(ap.skin).g,    hexToRgb(ap.skin).b)    : null,
+      clothes: ap.clothes ? rgbToHsl(hexToRgb(ap.clothes).r, hexToRgb(ap.clothes).g, hexToRgb(ap.clothes).b) : null
+    };
+    for (var i=0; i<d.length; i+=4){
+      if (d[i+3] === 0) continue;
+      var part = classifyPixel(d[i], d[i+1], d[i+2]);
+      if (!part || !targets[part]) continue;
+      var orig = rgbToHsl(d[i], d[i+1], d[i+2]);
+      // Take target hue + saturation, keep original luminance (preserves shading).
+      var out = hslToRgb(targets[part][0], targets[part][1], orig[2]);
+      d[i] = out[0]; d[i+1] = out[1]; d[i+2] = out[2];
+    }
+    ctx.putImageData(imgd, 0, 0);
+  }
+  // Replace the player texture
+  if (scene.textures.exists('player')) scene.textures.remove('player');
+  scene.textures.addSpriteSheet('player', cnv, { frameWidth: 80, frameHeight: 80 });
 }
 
 function loadState(){
@@ -43,6 +193,11 @@ function loadState(){
       if (s.at) Object.keys(s.at).forEach(function(k){ if(k in ST.at) ST.at[k]=s.at[k]; });
       if (s.mailRead) ST.mailRead = s.mailRead;
       if (s.achievements) ST.achievements = s.achievements;
+      if (s.appearance) {
+        ['hair','skin','clothes','eyes'].forEach(function(k){
+          if (s.appearance[k] !== undefined) ST.appearance[k] = s.appearance[k];
+        });
+      }
     }
   } catch(e){}
 }
@@ -180,6 +335,8 @@ var BootScene = new Phaser.Class({
     this.load.image('ts_terrainA5', A+'TerrainA5_32.png');
     this.load.image('ts_details',   A+'Details32.png');
     this.load.image('ts_terrainEx', A+'TerrainExpanded32.png');
+    this.load.image('ts_orchard',   A+'Orchard32.png');
+    this.load.image('ts_plants',    A+'Plants.png');
 
     // Existing assets we still use
     this.load.image('terrain',    A+'Terrain.png');       // bright-green grass (the old look)
@@ -217,7 +374,10 @@ var BootScene = new Phaser.Class({
       self.textures.remove(k);
       self.textures.addCanvas(k, canvas);
     }
-    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx'].forEach(keyOut);
+    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants'].forEach(keyOut);
+
+    // Apply any saved character appearance to the player sprite before animations build
+    applyAppearance(this);
 
     buildAnimations(this);
     this.scene.start('Garden');
@@ -469,6 +629,14 @@ var GardenScene = new Phaser.Class({
       }
     }
 
+    // ---- Water INTERIOR (no animation) — same texture as the borders for visual continuity ----
+    // TerrainExpanded (1, 9) is the interior fill that matches the rim tiles.
+    for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
+      if (TM[r][c] !== T_WATER) continue;
+      var isInterior = isWater(c, r-1) && isWater(c, r+1) && isWater(c-1, r) && isWater(c+1, r);
+      if (isInterior) drawEx(1, 9, c*TS, r*TS);
+    }
+
     // ---- Path edge shadow (small drop into grass) ----
     ctx.fillStyle='rgba(0,0,0,0.22)';
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
@@ -481,21 +649,7 @@ var GardenScene = new Phaser.Class({
     cnv.refresh();
     this.add.image(0,0,key).setOrigin(0,0).setDepth(0);
 
-    // ---- Animated water on top of INTERIOR water cells only (border tiles cover edges) ----
-    this.waterTiles = [];
-    for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
-      if (TM[r][c] !== T_WATER) continue;
-      // Skip edge cells — they're covered by the border autotile from TerrainExpanded
-      var isInterior = isWater(c, r-1) && isWater(c, r+1) && isWater(c-1, r) && isWater(c+1, r);
-      if (!isInterior) continue;
-      var w = this.add.sprite(c*TS, r*TS, 'water').setOrigin(0,0).setDepth(1);
-      w.setDisplaySize(TS, TS);
-      w.play('water-anim');
-      w.anims.setProgress(((c+r)%3)/3);
-      w.setTint(0x6ba0d0);
-      w.setAlpha(0.95);
-      this.waterTiles.push(w);
-    }
+    this.waterTiles = [];   // legacy reference; no animated tiles in this build
     // ---- Waterfall band ----
     for (var rr=0; rr<=2; rr++){
       for (var ci=0; ci<3; ci++){
@@ -532,8 +686,9 @@ var GardenScene = new Phaser.Class({
   // ============================================================
   buildBorders: function(){
     var TS = TILE;
-    // Horizontal LOG fence (Details32 col 2 row 2) for the TOP fence — clearly horizontal
-    var fenceH_sx = 2*TS, fenceH_sy = 2*TS;
+    // Horizontal picket fence (Details32 col 6 row 1) for the TOP fence — multiple
+    // pickets with horizontal rails; matches the picket-fence look exactly.
+    var fenceH_sx = 6*TS, fenceH_sy = 1*TS;
     // Vertical single-post fence (Details32 col 4 row 1) for the WEST fence
     var fenceV_sx = 4*TS, fenceV_sy = 1*TS;
 
@@ -548,44 +703,67 @@ var GardenScene = new Phaser.Class({
         2*TS + TS/2, r*TS + TS, TS, TS, r*TS + TS + 1);
     }
 
-    // ---- Thick shrub band BEYOND the fences (rows 0-1 above top fence, cols 0-1 west of west fence) ----
-    // Three big-bush variants from Details32 — chunky leafy bushes
-    var SHRUBS = [
-      { sx: 14*32, sy: 5*32, sw: 32, sh: 32 },
-      { sx: 15*32, sy: 5*32, sw: 32, sh: 32 },
-      { sx: 13*32, sy: 5*32, sw: 32, sh: 32 }
+    // ---- Forest scatter BEYOND the fences (rows 0-1 above top fence, cols 0-1 west of west fence) ----
+    // Mix of thick shrubs, fir trees, mushrooms, and boulders for an authentic woodland feel.
+    var FOREST = [
+      // type: 'shrub' | 'fir' | 'mushroom' | 'boulder'
+      // Each entry references a 32x32 region of Details32, with sub-tile rendering size.
+      { type:'shrub',    sx: 14*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.15, dispH: 1.15, weight: 25 },
+      { type:'shrub',    sx: 15*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.15, dispH: 1.15, weight: 25 },
+      { type:'shrub',    sx: 13*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.05, dispH: 1.05, weight: 20 },
+      // Fir trees from Details32 (cols 1-3 rows 9-11, 96x96)
+      { type:'fir',      sx: 32,    sy: 288,  sw: 96, sh: 96, dispW: 2.4,  dispH: 3.2,  weight: 10 },
+      // Mushrooms — Details32 has small mushroom-like tiles around col 12-13 row 12 in Plants.png
+      // but we keep this layer simple using Details32 small detail tiles (cols 0, 1 row 4 = small fungus shapes)
+      { type:'mushroom', sx: 0,     sy: 4*32, sw: 32, sh: 32, dispW: 0.7,  dispH: 0.7,  weight: 8  },
+      // Boulders — Details32 (cols 1-3 row 4)
+      { type:'boulder',  sx: 1*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 6  },
+      { type:'boulder',  sx: 2*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 6  }
     ];
+    var totalWeight = 0;
+    FOREST.forEach(function(f){ totalWeight += f.weight; });
+    function pickForest(h){
+      var roll = h % totalWeight, acc = 0;
+      for (var i=0; i<FOREST.length; i++){
+        acc += FOREST[i].weight;
+        if (roll < acc) return FOREST[i];
+      }
+      return FOREST[0];
+    }
     function shrubHash(c, r, salt){
-      // All-unsigned to avoid signed-XOR pitfalls. Hash result is in [0, 2^32).
       var h = c * 2654435761;
       h = (h ^ (r * 2246822519)) >>> 0;
       h = (h ^ salt) >>> 0;
       return h;
     }
+    function placeForestItem(c, r, salt){
+      var h = shrubHash(c, r, salt);
+      var f = pickForest(h);
+      var jx = ((h >>> 5) % 11) - 5;
+      var jy = ((h >>> 9) % 7) - 3;
+      var wx = c*TS + TS/2 + jx;
+      var wy = r*TS + TS + jy;
+      // Optional ground shadow for taller items
+      if (f.type === 'fir' || f.type === 'boulder'){
+        var sg = this.add.graphics().setDepth(wy - 1);
+        sg.fillStyle(0x000000, 0.40);
+        sg.fillEllipse(wx, wy - 2, TS * f.dispW * 0.50, 7);
+      }
+      this._placeCropImage('ts_details', f.sx, f.sy, f.sw, f.sh,
+        wx, wy, TS * f.dispW, TS * f.dispH, wy);
+    }
+    var placeFn = placeForestItem.bind(this);
+
     // Top band: rows 0-1, cols 0-34
     for (var r=0; r<=1; r++){
       for (var c=0; c<=34; c++){
-        var h = shrubHash(c, r, 0x12C0FFEE);
-        var v = SHRUBS[h % SHRUBS.length];
-        var jx = ((h >>> 5) % 9) - 4;
-        var jy = ((h >>> 9) % 5) - 2;
-        var wx = c*TS + TS/2 + jx;
-        var wy = r*TS + TS + jy;
-        this._placeCropImage('ts_details', v.sx, v.sy, v.sw, v.sh,
-          wx, wy, TS * 1.15, TS * 1.15, wy);
+        placeFn(c, r, 0x12C0FFEE);
       }
     }
-    // West band: cols 0-1, rows 2-23 (skip rows already covered by top band)
+    // West band: cols 0-1, rows 2-23
     for (var c=0; c<=1; c++){
       for (var r=2; r<=23; r++){
-        var h = shrubHash(c, r, 0x1DEAD2);
-        var v = SHRUBS[h % SHRUBS.length];
-        var jx = ((h >>> 5) % 9) - 4;
-        var jy = ((h >>> 9) % 5) - 2;
-        var wx = c*TS + TS/2 + jx;
-        var wy = r*TS + TS + jy;
-        this._placeCropImage('ts_details', v.sx, v.sy, v.sw, v.sh,
-          wx, wy, TS * 1.15, TS * 1.15, wy);
+        placeFn(c, r, 0x1DEAD2);
       }
     }
   },
@@ -606,13 +784,13 @@ var GardenScene = new Phaser.Class({
     }
 
     // ---- FARMHOUSE (top-left) ----
-    // Source: Buildings32 cols 0-3 rows 0-5 = px(0,0,128,192). Scale up to FARMHOUSE w x h tiles.
+    // Source: Buildings32 cols 0-4 rows 0-5 = px(0,0,160,192). Was 128 wide which cut off
+    // the right edge with the chimney/birdhouse — corrected to 160.
     var fhPxX = (FARMHOUSE.c) * TS;
     var fhPxY = (FARMHOUSE.r) * TS;
     var fhW = FARMHOUSE.w * TS, fhH = FARMHOUSE.h * TS;
-    // Centre of footprint, anchored at bottom (origin 0.5, 1)
     shadow(fhPxX + fhW/2, fhPxY + fhH + 4, fhW*0.85, 14);
-    this._placeCropImage('ts_buildings', 0, 0, 128, 192,
+    this._placeCropImage('ts_buildings', 0, 0, 160, 192,
       fhPxX + fhW/2, fhPxY + fhH, fhW, fhH, fhPxY + fhH);
 
     // ---- NOTICEBOARD (mailbox replacement next to farmhouse) ----
@@ -624,16 +802,20 @@ var GardenScene = new Phaser.Class({
 
     // (Well removed — practicals tracker is now part of the Farmhouse interaction.)
 
-    // ---- STUDY TREE (centre of map) — growth-stage aware, shadow scales with stage ----
+    // ---- STUDY TREE (centre of map) — apple tree from Orchard tileset.
+    //      Largest tree when fully grown. Base centred in the central square.
     var stX = STUDY_TREE.c * TS, stY = STUDY_TREE.r * TS;
     var stW = STUDY_TREE.w * TS, stH = STUDY_TREE.h * TS;
-    var centreX = stX + stW/2, baseY = stY + stH;
+    // Centre of the path ring (centre of the 3x3 footprint, anchored at base)
+    var centreX = stX + stW/2;
+    var baseY = stY + stH;     // base of the tree sits at the bottom of its footprint
     this.studyTreeSprite = null;
-    this.studyTreeShadow = null;   // built fresh each refresh based on current stage
+    this.studyTreeShadow = null;
     this.studyTreeCentreX = centreX;
     this.studyTreeBaseY   = baseY;
-    this.studyTreeMaxW    = stW;
-    this.studyTreeMaxH    = stH * 1.4;
+    // Make the apple tree the LARGEST tree at full growth — scale up considerably.
+    this.studyTreeMaxW    = TS * 4.5;
+    this.studyTreeMaxH    = TS * 5.5;
     this.refreshStudyTree();
 
     // ---- CAVE (top-right, beyond river) ----
@@ -651,29 +833,43 @@ var GardenScene = new Phaser.Class({
     if (this.studyTreeShadow) { this.studyTreeShadow.destroy(); this.studyTreeShadow = null; }
 
     if (stage === 0){
-      // Seedling — no shadow yet, just the seedling sprite at small size
-      this.studyTreeSprite = this.add.image(this.studyTreeCentreX, this.studyTreeBaseY, 'seedling')
-        .setOrigin(0.5, 1).setDisplaySize(TILE*0.8, TILE*0.8).setDepth(this.studyTreeBaseY);
+      // Seedling — no shadow yet, just the small sprout sprite. Use the tiny
+      // seedling at Orchard (0, 2): a 32x32 single-tile sprout.
+      this.studyTreeSprite = this._placeCropImage('ts_orchard', 0, 64, 32, 32,
+        this.studyTreeCentreX, this.studyTreeBaseY, TS * 0.9, TS * 0.9,
+        this.studyTreeBaseY);
       return;
     }
 
-    // Source: Details32 cols 4-6 rows 6-8 = px(128, 192, 96, 96)
-    var scale = [0, 0.30, 0.50, 0.70, 0.85, 1.00][stage];
-    var w = this.studyTreeMaxW * scale;
-    var h = this.studyTreeMaxH * scale;
+    // Apple-tree growth progression on Orchard32 (each variant is 64x96 px = 2x3 tiles):
+    //   stage 1: small sprout       (1, 2) — 32x64
+    //   stage 2: white blossom      (2, 0) — 64x96 (cols 2-3, rows 0-2)
+    //   stage 3: green leafy        (4, 0) — 64x96 (cols 4-5, rows 0-2)
+    //   stage 4: bigger green       (6, 0) — 64x96 (cols 6-7, rows 0-2)
+    //   stage 5: full red apple     (8, 0) — 64x96 (cols 8-9, rows 0-2)
+    var VARIANTS = [
+      null,
+      { sx:32,  sy:64, sw:32, sh:64, scale:0.30 },
+      { sx:64,  sy:0,  sw:64, sh:96, scale:0.55 },
+      { sx:128, sy:0,  sw:64, sh:96, scale:0.75 },
+      { sx:192, sy:0,  sw:64, sh:96, scale:0.90 },
+      { sx:256, sy:0,  sw:64, sh:96, scale:1.00 }
+    ];
+    var v = VARIANTS[stage];
+    var w = this.studyTreeMaxW * v.scale;
+    var h = this.studyTreeMaxH * v.scale;
 
-    // Shadow scaled to current canopy width; darker as the tree fills out
-    var shadowAlpha = 0.20 + scale * 0.25;   // 0.275 at stage 1 → 0.45 at stage 5
+    // Procedural shadow that hugs the BASE/TRUNK (not the full canopy width),
+    // shifted UP from the base of the sprite to sit at trunk level.
+    // The trunk is at the bottom ~15% of these tree sprites.
+    var trunkY = this.studyTreeBaseY - 4;   // shadow sits at trunk base
+    var shadowW = w * 0.40;                  // narrower than canopy
+    var shadowAlpha = 0.30 + v.scale * 0.20; // 0.36 → 0.50 across stages
     this.studyTreeShadow = this.add.graphics().setDepth(this.studyTreeBaseY - 1);
     this.studyTreeShadow.fillStyle(0x000000, shadowAlpha);
-    this.studyTreeShadow.fillEllipse(
-      this.studyTreeCentreX,
-      this.studyTreeBaseY + 2,
-      w * 0.80,                // shadow width tracks canopy
-      6 + scale * 12           // shadow depth grows with stage (6px → 18px)
-    );
+    this.studyTreeShadow.fillEllipse(this.studyTreeCentreX, trunkY, shadowW, 6 + v.scale * 8);
 
-    this.studyTreeSprite = this._placeCropImage('ts_details', 128, 192, 96, 96,
+    this.studyTreeSprite = this._placeCropImage('ts_orchard', v.sx, v.sy, v.sw, v.sh,
       this.studyTreeCentreX, this.studyTreeBaseY, w, h, this.studyTreeBaseY);
   },
 
@@ -815,14 +1011,53 @@ var GardenScene = new Phaser.Class({
         var jy = ((h >>> 4) % 5) - 2;
         var wx = c*TS + TS/2 + jx;
         var wy = r*TS + TS + jy;
-        // Procedural drop shadow (no Tree_shadow.png needed)
+        // Procedural drop shadow — at the TRUNK level, not below the leaves.
+        // Tree sprites are drawn with origin (0.5, 1) so wy is the base; the
+        // trunk meets ground roughly at wy itself, but we nudge up slightly so
+        // the shadow visually anchors to the trunk rather than overshooting.
         var sg = self.add.graphics().setDepth(wy - 1);
         sg.fillStyle(0x000000, 0.40);
-        sg.fillEllipse(wx, wy + 2, TS * variant.dispW * 0.65, 10);
+        sg.fillEllipse(wx, wy - 2, TS * variant.dispW * 0.40, 8);
         self._placeCropImage('ts_details', variant.sx, variant.sy, variant.sw, variant.sh,
           wx, wy, TS * variant.dispW, TS * variant.dispH, wy);
       }
     }
+
+    // ---- SUNFLOWERS — organised placement inside the farm + along the borders ----
+    // Source: Plants.png at (1, 13) px(32, 416). A 32x32 cell with a tall sunflower.
+    var SUN_SPOTS = [
+      // Inside the farm — flanking key landmarks
+      [11, 9], [11, 15],
+      [22, 9], [22, 15],
+      [9, 12], [9, 13],
+      [27, 10], [27, 14],
+      [14, 19], [18, 19],
+      // Inside the perimeter — a cosy line of sunflowers along the fence lines
+      [4, 3], [10, 3], [16, 3], [22, 3], [28, 3], [31, 3],
+      [3, 12], [3, 16], [3, 20]
+    ];
+    SUN_SPOTS.forEach(function(pt){
+      var c = pt[0], r = pt[1];
+      if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
+      if (TM[r][c] !== T_GRASS) return;
+      var wx = c*TS + TS/2, wy = r*TS + TS;
+      var g = self.add.graphics().setDepth(wy - 1);
+      g.fillStyle(0x000000, 0.30);
+      g.fillEllipse(wx, wy - 1, TS*0.45, 4);
+      self._placeCropImage('ts_plants', 32, 416, 32, 32, wx, wy, TS*0.95, TS*1.20, wy);
+    });
+    this.sunflowerSpots = SUN_SPOTS.slice();
+
+    // ---- LILY PADS on the pond ----
+    var LILY_SPOTS = [ [3, 24], [5, 23], [7, 25], [2, 26], [6, 24] ];
+    LILY_SPOTS.forEach(function(pt){
+      var c = pt[0], r = pt[1];
+      if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
+      if (TM[r][c] !== T_WATER) return;
+      var wx = c*TS + TS/2, wy = r*TS + TS/2;
+      // Plants.png at (20, 13) — small lily pad
+      self._placeCropImage('ts_plants', 20*32, 13*32, 32, 32, wx, wy, TS*0.7, TS*0.5, 2);
+    });
   },
 
   // ============================================================
@@ -841,9 +1076,12 @@ var GardenScene = new Phaser.Class({
       s.home = { x:p[0]*TILE, y:p[1]*TILE }; s.t = Math.random()*Math.PI*2; s.idx=i;
       self.butterflies.push(s);
     });
-    // Bees patrol near beds
+    // Bees patrol near beds AND near sunflowers (the new flowers attract pollinators)
     var beeSpots = BED_DEFS.map(function(b){ return [b.c1+1, b.r1+1]; });
-    beeSpots.forEach(function(p,i){
+    // Take 4 representative sunflower positions for additional bees (interspersed)
+    var sunBeeSpots = [[11, 9], [22, 9], [14, 19], [3, 12]];
+    var allBeeSpots = beeSpots.concat(sunBeeSpots);
+    allBeeSpots.forEach(function(p,i){
       var s = self.add.sprite(p[0]*TILE, p[1]*TILE, 'bee').setDepth(9000);
       s.play('bee-fly');
       s.home={ x:p[0]*TILE, y:p[1]*TILE }; s.t=i*1.5;
@@ -1128,7 +1366,7 @@ var GardenScene = new Phaser.Class({
       backgroundColor:'#0a0804cc', padding:{x:6,y:3}
     }).setScrollFactor(0).setDepth(99999);
 
-    this.controls = this.add.text(VIEW_W-10, 10, 'WASD move · E interact', {
+    this.controls = this.add.text(VIEW_W-10, 10, 'WASD move \u00b7 E interact', {
       fontFamily:'monospace', fontSize:'10px', color:'#80c040',
       backgroundColor:'#0a0804cc', padding:{x:6,y:3}
     }).setOrigin(1,0).setScrollFactor(0).setDepth(99999);
@@ -1137,6 +1375,14 @@ var GardenScene = new Phaser.Class({
       fontFamily:'monospace', fontSize:'12px', color:'#80c040',
       backgroundColor:'#0a0804ee', padding:{x:10,y:5}
     }).setOrigin(0.5).setScrollFactor(0).setDepth(99999).setAlpha(0);
+
+    // ---- Customise button in the bottom-right corner of the viewport ----
+    var self = this;
+    this.customBtn = this.add.text(VIEW_W-10, VIEW_H-10, 'CUSTOMISE', {
+      fontFamily:'monospace', fontSize:'11px', color:'#1a2a14',
+      backgroundColor:'#9ad08a', padding:{x:10,y:6}
+    }).setOrigin(1,1).setScrollFactor(0).setDepth(99999).setInteractive({ useHandCursor:true });
+    this.customBtn.on('pointerdown', function(){ openModal('customise', self); });
   },
 
   showToast: function(msg){

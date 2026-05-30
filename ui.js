@@ -31,6 +31,11 @@ function openModal(id, scene){
     body.innerHTML = wellHTML();   // reuses the practicals UI; "well" is just a function name now
     attachPR();
   }
+  else if (id==='customise'){
+    title.textContent='APPEARANCE';
+    body.innerHTML = customiseHTML();
+    attachCustomise();
+  }
   else if (id==='farmer'){
     title.textContent='THE FARMER';
     _farmerModule = null;
@@ -217,3 +222,62 @@ function mailHTML(){
 window.addEventListener('DOMContentLoaded', function(){
   document.getElementById('modal-close').onclick = closeModal;
 });
+
+// ============================================================
+//  CUSTOMISE — character appearance picker
+// ============================================================
+function customiseHTML(){
+  var ap = ST.appearance || { hair:null, skin:null, clothes:null, eyes:null };
+  function swatchRow(label, key, palette){
+    var current = ap[key];
+    var html = '<div class="charrow"><div class="charlabel">'+label+'</div><div class="swatches">';
+    html += '<button class="swatch reset'+(current===null?' sel':'')+'" data-cat="'+key+'" data-hex="reset" title="Default"></button>';
+    palette.forEach(function(c){
+      var isSel = (current === c.hex);
+      html += '<button class="swatch'+(isSel?' sel':'')+'" '
+            + 'data-cat="'+key+'" data-hex="'+c.hex+'" '
+            + 'style="background:'+c.hex+'" title="'+c.name+'"></button>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+  var h = '<p class="note" style="font-size:12px;line-height:1.55">'
+        + 'Pick colours for your character. The original sprite shading is preserved.</p>';
+  h += '<div class="charbox">';
+  h += swatchRow('HAIR',    'hair',    CHAR_PALETTES.hair);
+  h += swatchRow('SKIN',    'skin',    CHAR_PALETTES.skin);
+  h += swatchRow('CLOTHES', 'clothes', CHAR_PALETTES.clothes);
+  h += swatchRow('EYES',    'eyes',    CHAR_PALETTES.eyes);
+  h += '</div>';
+  h += '<div class="charactions"><button class="resetbtn" id="char-reset">Reset to default</button></div>';
+  return h;
+}
+function attachCustomise(){
+  document.querySelectorAll('.swatch').forEach(function(el){
+    el.onclick = function(){
+      var cat = el.dataset.cat, hex = el.dataset.hex;
+      ST.appearance[cat] = (hex === 'reset') ? null : hex;
+      saveState();
+      // Re-apply to the player sprite immediately
+      if (_modalScene && typeof applyAppearance === 'function'){
+        applyAppearance(_modalScene);
+        // Rebind the player sprite's texture so the new pixels show
+        if (_modalScene.player) _modalScene.player.setTexture('player', 0);
+      }
+      // Refresh the panel to show the new selection state
+      document.getElementById('modal-body').innerHTML = customiseHTML();
+      attachCustomise();
+    };
+  });
+  var reset = document.getElementById('char-reset');
+  if (reset) reset.onclick = function(){
+    ST.appearance = { hair:null, skin:null, clothes:null, eyes:null };
+    saveState();
+    if (_modalScene && typeof applyAppearance === 'function'){
+      applyAppearance(_modalScene);
+      if (_modalScene.player) _modalScene.player.setTexture('player', 0);
+    }
+    document.getElementById('modal-body').innerHTML = customiseHTML();
+    attachCustomise();
+  };
+}
