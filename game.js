@@ -196,15 +196,17 @@ var BootScene = new Phaser.Class({
   },
   create: function(){
     // Strip the near-black background from the new RGB tilesheets so they composite
-    // cleanly. Replaces the original texture in-place by overwriting the cache entry.
-    var keyer = (function(scene){ return function(k){
-      var tex = scene.textures.get(k);
-      if (!tex || !tex.getSourceImage) return;
+    // cleanly. Use a vanilla HTMLCanvasElement (no Phaser CanvasTexture intermediate).
+    var self = this;
+    function keyOut(k){
+      var tex = self.textures.get(k);
+      if (!tex || typeof tex.getSourceImage !== 'function') return;
       var src = tex.getSourceImage();
-      var keyedKey = k + '_keyed';
-      if (scene.textures.exists(keyedKey)) return;
-      var cnv = scene.textures.createCanvas(keyedKey, src.width, src.height);
-      var ctx = cnv.getContext();
+      if (!src || !src.width) return;
+      var canvas = document.createElement('canvas');
+      canvas.width = src.width;
+      canvas.height = src.height;
+      var ctx = canvas.getContext('2d');
       ctx.drawImage(src, 0, 0);
       var imgd = ctx.getImageData(0, 0, src.width, src.height);
       var d = imgd.data;
@@ -212,12 +214,10 @@ var BootScene = new Phaser.Class({
         if (d[i] + d[i+1] + d[i+2] <= 29) d[i+3] = 0;
       }
       ctx.putImageData(imgd, 0, 0);
-      cnv.refresh();
-      // Swap the original key to point at the keyed canvas (so existing code keeps working)
-      scene.textures.remove(k);
-      scene.textures.addCanvas(k, cnv.getCanvas());
-    }; })(this);
-    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx'].forEach(keyer);
+      self.textures.remove(k);
+      self.textures.addCanvas(k, canvas);
+    }
+    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx'].forEach(keyOut);
 
     buildAnimations(this);
     this.scene.start('Garden');
@@ -329,40 +329,42 @@ var GardenScene = new Phaser.Class({
       }
     }
 
-    // ---- Path network (yellow sand) ----
+    // ---- Path network (2-tile-wide so grass-edge autotile encroaches on both sides) ----
     function p(c, r){ if (r>=0 && r<MAP_H && c>=0 && c<MAP_W && TM[r][c] === T_GRASS) TM[r][c] = T_PATH; }
+    function pathRect(c1, c2, r1, r2){
+      for (var r=r1; r<=r2; r++) for (var c=c1; c<=c2; c++) p(c, r);
+    }
 
-    // Centre ring around the Study Tree (tree at cols 18-20 rows 11-13).
-    // Path frames a 5x5 ring at cols 17-21 rows 10-14 (perimeter only).
-    for (var c=17; c<=21; c++){ p(c, 10); p(c, 14); }
-    for (var r=11; r<=13; r++){ p(17, r); p(21, r); }
+    // Centre ring (2 thick) around Study Tree at cols 18-20 rows 11-13
+    pathRect(16, 22,  9, 10);    // N strip
+    pathRect(16, 22, 14, 15);    // S strip
+    pathRect(16, 17, 11, 13);    // W side
+    pathRect(21, 22, 11, 13);    // E side
 
-    // Path from farmhouse (front door around col 6 row 9) south to the centre ring
-    for (var r=9; r<=12; r++) p(6, r);
-    for (var c=6; c<=17; c++) p(c, 12);
+    // Upper E-W corridor: south of farmhouse to centre ring
+    pathRect(6, 22,  9, 10);
 
-    // Path south to M1 bed (cols 4-7, rows 18-21) — col 6 down then along its north edge
-    for (var r=13; r<=17; r++) p(6, r);
-    for (var c=4; c<=7; c++)  p(c, 17);
+    // Lower E-W corridor: extends east toward cave river edge
+    pathRect(6, 32, 14, 15);
 
-    // Path NE to M2 bed (cols 26-29, rows 4-7)
-    for (var c=22; c<=25; c++) p(c, 10);
-    for (var r=4;  r<=10; r++) p(25, r);
+    // Vertical "lung" linking upper to lower west of tree
+    pathRect(6, 7, 11, 13);
 
-    // Path east to M3 bed (cols 27-30, rows 17-20)
-    for (var c=22; c<=26; c++) p(c, 15);
-    for (var r=15; r<=19; r++) p(26, r);
+    // South vertical down to M1 bed (cols 4-7 rows 18-21)
+    pathRect(6, 7, 16, 17);
 
-    // Path south to M4 bed (cols 13-16, rows 21-24)
-    for (var r=14; r<=20; r++) p(17, r);
-    for (var c=13; c<=17; c++) p(c, 20);
+    // South vertical down to M4 bed (cols 13-16 rows 21-24)
+    pathRect(16, 17, 16, 20);
 
-    // Path east heading toward the cave — terminates just shy of the river (col 32)
-    for (var c=22; c<=32; c++) p(c, 12);
+    // Upper-corridor north spur to M2 bed (cols 26-29 rows 4-7)
+    pathRect(24, 25, 6, 8);
 
-    // Cave-side path (on the FAR bank of the river)
-    for (var r=3; r<=26; r++) p(37, r);
-    for (var c=36; c<=38; c++) p(c, 3);
+    // Lower-corridor south spur to M3 bed (cols 27-30 rows 17-20)
+    pathRect(25, 26, 16, 17);
+
+    // Cave-side path (far bank, unreachable across river)
+    pathRect(37, 38,  3, 26);
+    pathRect(36, 38,  3,  4);
 
     // ---- Garden bed soil overrides path/grass ----
     BED_DEFS.forEach(function(b){
@@ -432,10 +434,10 @@ var GardenScene = new Phaser.Class({
       drawA5(sc, sr, c*TS, r*TS);
     }
 
-    // ---- WATER base colour (animated sprites layered on top) ----
+    // ---- WATER base colour (animated sprites layered on top) — darker for contrast with rock rim ----
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL){
-        ctx.fillStyle = '#4a8ec8';
+        ctx.fillStyle = '#2e6ba0';
         ctx.fillRect(c*TS, r*TS, TS, TS);
       }
     }
@@ -490,8 +492,8 @@ var GardenScene = new Phaser.Class({
       w.setDisplaySize(TS, TS);
       w.play('water-anim');
       w.anims.setProgress(((c+r)%3)/3);
-      w.setTint(0x8fc0e0);
-      w.setAlpha(0.92);
+      w.setTint(0x6ba0d0);
+      w.setAlpha(0.95);
       this.waterTiles.push(w);
     }
     // ---- Waterfall band ----
@@ -530,8 +532,8 @@ var GardenScene = new Phaser.Class({
   // ============================================================
   buildBorders: function(){
     var TS = TILE;
-    // Horizontal picket fence (Details32 col 5 row 1) for the TOP fence
-    var fenceH_sx = 5*TS, fenceH_sy = 1*TS;
+    // Horizontal LOG fence (Details32 col 2 row 2) for the TOP fence — clearly horizontal
+    var fenceH_sx = 2*TS, fenceH_sy = 2*TS;
     // Vertical single-post fence (Details32 col 4 row 1) for the WEST fence
     var fenceV_sx = 4*TS, fenceV_sy = 1*TS;
 
@@ -547,22 +549,24 @@ var GardenScene = new Phaser.Class({
     }
 
     // ---- Thick shrub band BEYOND the fences (rows 0-1 above top fence, cols 0-1 west of west fence) ----
-    // Three big-bush variants from Details32:
-    //   (14,5) chunky bush, (15,5) larger round bush, (13,5) medium bush
+    // Three big-bush variants from Details32 — chunky leafy bushes
     var SHRUBS = [
       { sx: 14*32, sy: 5*32, sw: 32, sh: 32 },
       { sx: 15*32, sy: 5*32, sw: 32, sh: 32 },
       { sx: 13*32, sy: 5*32, sw: 32, sh: 32 }
     ];
-    function shrubHash(c, r){
-      return ((c * 2654435761) ^ (r * 2246822519) ^ 0xC0FFEE) >>> 0;
+    function shrubHash(c, r, salt){
+      // All-unsigned to avoid signed-XOR pitfalls. Hash result is in [0, 2^32).
+      var h = c * 2654435761;
+      h = (h ^ (r * 2246822519)) >>> 0;
+      h = (h ^ salt) >>> 0;
+      return h;
     }
-    // Top band: rows 0-1, cols 0-34 (covers the full visible top strip, extends past fence corner)
+    // Top band: rows 0-1, cols 0-34
     for (var r=0; r<=1; r++){
       for (var c=0; c<=34; c++){
-        var h = shrubHash(c, r);
+        var h = shrubHash(c, r, 0x12C0FFEE);
         var v = SHRUBS[h % SHRUBS.length];
-        // Pixel jitter so the band doesn't look like a perfect grid
         var jx = ((h >>> 5) % 9) - 4;
         var jy = ((h >>> 9) % 5) - 2;
         var wx = c*TS + TS/2 + jx;
@@ -571,11 +575,10 @@ var GardenScene = new Phaser.Class({
           wx, wy, TS * 1.15, TS * 1.15, wy);
       }
     }
-    // West band: cols 0-1, rows 0-23 (covers the full visible west strip, extends past fence corner)
+    // West band: cols 0-1, rows 2-23 (skip rows already covered by top band)
     for (var c=0; c<=1; c++){
-      for (var r=0; r<=23; r++){
-        if (r <= 1 && c <= 34) continue;   // already covered by top band
-        var h = shrubHash(c, r) ^ 0xDEADBEEF;
+      for (var r=2; r<=23; r++){
+        var h = shrubHash(c, r, 0x1DEAD2);
         var v = SHRUBS[h % SHRUBS.length];
         var jx = ((h >>> 5) % 9) - 4;
         var jy = ((h >>> 9) % 5) - 2;
@@ -994,21 +997,21 @@ var GardenScene = new Phaser.Class({
     // Patrol waypoints: each one is a path tile next to a bed, alternating with
     // a central-ring rest spot. The route is verified against the path layout above.
     this.farmerRoute = [
-      // Near M1 (SW bed, now cols 4-7) — on path north of bed
+      // Near M1 (SW bed) — on M1 spur path (cols 6-7, rows 16-17)
       { x: 6*TS + TS/2,  y: 17*TS + TS/2, face:'down'  },
-      // Centre ring west side
+      // Centre ring W side (cols 16-17 rows 11-13)
       { x: 17*TS + TS/2, y: 12*TS + TS/2, face:'right' },
-      // Near M2 (NE bed) — on path west of bed
+      // Near M2 (NE bed) — on M2 spur (cols 24-25 rows 6-8)
       { x: 25*TS + TS/2, y: 8*TS  + TS/2, face:'right' },
-      // Centre ring east side
+      // Centre ring E side (cols 21-22 rows 11-13)
       { x: 21*TS + TS/2, y: 12*TS + TS/2, face:'down'  },
-      // Near M3 (E bed) — on path west of bed
+      // Near M3 (E bed) — on M3 spur (cols 25-26 rows 16-17)
       { x: 26*TS + TS/2, y: 17*TS + TS/2, face:'right' },
-      // Centre ring south
+      // Centre ring S strip (cols 16-22 rows 14-15)
       { x: 21*TS + TS/2, y: 14*TS + TS/2, face:'left'  },
-      // Near M4 (S bed) — on path north of bed
+      // Near M4 (S bed) — on M4 spur (cols 16-17 rows 16-20)
       { x: 16*TS + TS/2, y: 20*TS + TS/2, face:'down'  },
-      // Centre ring south-west
+      // Centre ring S strip alt position
       { x: 17*TS + TS/2, y: 14*TS + TS/2, face:'up'    }
     ];
     this.farmerIdx = 0;
