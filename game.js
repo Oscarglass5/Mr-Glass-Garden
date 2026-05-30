@@ -194,7 +194,34 @@ var BootScene = new Phaser.Class({
     this.load.image('seedling', A+'Hole_with_a_seedling.png');
     this.load.image('pondborder', A+'PondBorders.png'); // re-used as the well
   },
-  create: function(){ buildAnimations(this); this.scene.start('Garden'); }
+  create: function(){
+    // Strip the near-black background from the new RGB tilesheets so they composite
+    // cleanly. Replaces the original texture in-place by overwriting the cache entry.
+    var keyer = (function(scene){ return function(k){
+      var tex = scene.textures.get(k);
+      if (!tex || !tex.getSourceImage) return;
+      var src = tex.getSourceImage();
+      var keyedKey = k + '_keyed';
+      if (scene.textures.exists(keyedKey)) return;
+      var cnv = scene.textures.createCanvas(keyedKey, src.width, src.height);
+      var ctx = cnv.getContext();
+      ctx.drawImage(src, 0, 0);
+      var imgd = ctx.getImageData(0, 0, src.width, src.height);
+      var d = imgd.data;
+      for (var i=0; i<d.length; i+=4){
+        if (d[i] + d[i+1] + d[i+2] <= 29) d[i+3] = 0;
+      }
+      ctx.putImageData(imgd, 0, 0);
+      cnv.refresh();
+      // Swap the original key to point at the keyed canvas (so existing code keeps working)
+      scene.textures.remove(k);
+      scene.textures.addCanvas(k, cnv.getCanvas());
+    }; })(this);
+    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx'].forEach(keyer);
+
+    buildAnimations(this);
+    this.scene.start('Garden');
+  }
 });
 
 function buildAnimations(scene){
@@ -413,18 +440,31 @@ var GardenScene = new Phaser.Class({
       }
     }
 
-    // ---- Stone rim around water (rock edge where water meets land) ----
+    // ---- Water border tiles using TerrainExpanded 9-cell autotile (cols 0-2, rows 8-10) ----
+    //   (0,8)=NW corner, (1,8)=N edge,    (2,8)=NE corner
+    //   (0,9)=W edge,    (1,9)=interior, (2,9)=E edge
+    //   (0,10)=SW corner,(1,10)=S edge,   (2,10)=SE corner
+    function isWater(c, r){
+      if (r<0||r>=MAP_H||c<0||c>=MAP_W) return false;
+      return TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL;
+    }
+    function drawEx(sc, sr, dx, dy){
+      ctx.drawImage(terrEx, sc*TS, sr*TS, TS, TS, dx, dy, TS, TS);
+    }
+    var terrEx = this.textures.get('ts_terrainEx').getSourceImage();
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
-      if (TM[r][c] !== T_WATER && TM[r][c] !== T_WATERFALL) continue;
-      ctx.fillStyle = '#3a3a48';
-      var below = (r+1<MAP_H && TM[r+1][c] !== T_WATER && TM[r+1][c] !== T_WATERFALL);
-      var above = (r-1>=0 && TM[r-1][c] !== T_WATER && TM[r-1][c] !== T_WATERFALL);
-      var right = (c+1<MAP_W && TM[r][c+1] !== T_WATER && TM[r][c+1] !== T_WATERFALL);
-      var left  = (c-1>=0 && TM[r][c-1] !== T_WATER && TM[r][c-1] !== T_WATERFALL);
-      if (below) ctx.fillRect(c*TS, r*TS+TS-3, TS, 3);
-      if (above) ctx.fillRect(c*TS, r*TS, TS, 3);
-      if (right) ctx.fillRect(c*TS+TS-3, r*TS, 3, TS);
-      if (left)  ctx.fillRect(c*TS, r*TS, 3, TS);
+      if (TM[r][c] !== T_WATER) continue;
+      var n = !isWater(c, r-1);
+      var s = !isWater(c, r+1);
+      var e = !isWater(c+1, r);
+      var w = !isWater(c-1, r);
+      // Pick the autotile cell: column is W/E based, row is N/S based
+      var sc = w ? 0 : (e ? 2 : 1);
+      var sr = n ? 8 : (s ? 10 : 9);
+      // Only draw if this is an edge tile (skip pure interior to keep the animated water visible)
+      if (n || s || e || w){
+        drawEx(sc, sr, c*TS, r*TS);
+      }
     }
 
     // ---- Path edge shadow (small drop into grass) ----
@@ -439,18 +479,20 @@ var GardenScene = new Phaser.Class({
     cnv.refresh();
     this.add.image(0,0,key).setOrigin(0,0).setDepth(0);
 
-    // ---- Animated water on top of water cells ----
+    // ---- Animated water on top of INTERIOR water cells only (border tiles cover edges) ----
     this.waterTiles = [];
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
-      if (TM[r][c] === T_WATER){
-        var w = this.add.sprite(c*TS, r*TS, 'water').setOrigin(0,0).setDepth(1);
-        w.setDisplaySize(TS, TS);
-        w.play('water-anim');
-        w.anims.setProgress(((c+r)%3)/3);
-        w.setTint(0x8fc0e0);
-        w.setAlpha(0.92);
-        this.waterTiles.push(w);
-      }
+      if (TM[r][c] !== T_WATER) continue;
+      // Skip edge cells — they're covered by the border autotile from TerrainExpanded
+      var isInterior = isWater(c, r-1) && isWater(c, r+1) && isWater(c-1, r) && isWater(c+1, r);
+      if (!isInterior) continue;
+      var w = this.add.sprite(c*TS, r*TS, 'water').setOrigin(0,0).setDepth(1);
+      w.setDisplaySize(TS, TS);
+      w.play('water-anim');
+      w.anims.setProgress(((c+r)%3)/3);
+      w.setTint(0x8fc0e0);
+      w.setAlpha(0.92);
+      this.waterTiles.push(w);
     }
     // ---- Waterfall band ----
     for (var rr=0; rr<=2; rr++){
@@ -503,6 +545,46 @@ var GardenScene = new Phaser.Class({
       this._placeCropImage('ts_details', fenceV_sx, fenceV_sy, TS, TS,
         2*TS + TS/2, r*TS + TS, TS, TS, r*TS + TS + 1);
     }
+
+    // ---- Thick shrub band BEYOND the fences (rows 0-1 above top fence, cols 0-1 west of west fence) ----
+    // Three big-bush variants from Details32:
+    //   (14,5) chunky bush, (15,5) larger round bush, (13,5) medium bush
+    var SHRUBS = [
+      { sx: 14*32, sy: 5*32, sw: 32, sh: 32 },
+      { sx: 15*32, sy: 5*32, sw: 32, sh: 32 },
+      { sx: 13*32, sy: 5*32, sw: 32, sh: 32 }
+    ];
+    function shrubHash(c, r){
+      return ((c * 2654435761) ^ (r * 2246822519) ^ 0xC0FFEE) >>> 0;
+    }
+    // Top band: rows 0-1, cols 0-34 (covers the full visible top strip, extends past fence corner)
+    for (var r=0; r<=1; r++){
+      for (var c=0; c<=34; c++){
+        var h = shrubHash(c, r);
+        var v = SHRUBS[h % SHRUBS.length];
+        // Pixel jitter so the band doesn't look like a perfect grid
+        var jx = ((h >>> 5) % 9) - 4;
+        var jy = ((h >>> 9) % 5) - 2;
+        var wx = c*TS + TS/2 + jx;
+        var wy = r*TS + TS + jy;
+        this._placeCropImage('ts_details', v.sx, v.sy, v.sw, v.sh,
+          wx, wy, TS * 1.15, TS * 1.15, wy);
+      }
+    }
+    // West band: cols 0-1, rows 0-23 (covers the full visible west strip, extends past fence corner)
+    for (var c=0; c<=1; c++){
+      for (var r=0; r<=23; r++){
+        if (r <= 1 && c <= 34) continue;   // already covered by top band
+        var h = shrubHash(c, r) ^ 0xDEADBEEF;
+        var v = SHRUBS[h % SHRUBS.length];
+        var jx = ((h >>> 5) % 9) - 4;
+        var jy = ((h >>> 9) % 5) - 2;
+        var wx = c*TS + TS/2 + jx;
+        var wy = r*TS + TS + jy;
+        this._placeCropImage('ts_details', v.sx, v.sy, v.sw, v.sh,
+          wx, wy, TS * 1.15, TS * 1.15, wy);
+      }
+    }
   },
 
   // ============================================================
@@ -537,31 +619,18 @@ var GardenScene = new Phaser.Class({
     this._placeCropImage('ts_buildings', 128, 0, 32, 32,
       nbX + TS/2, nbY + TS, TS, TS, nbY + TS);
 
-    // ---- WELL (uses existing PondBorders.png — small water vessel) ----
-    var wlX = WELL.c * TS, wlY = WELL.r * TS;
-    shadow(wlX + TS, wlY + TS*2 + 4, TS*1.5, 10);
-    var well = this.add.image(wlX + TS, wlY + TS*2, 'pondborder').setOrigin(0.5,1);
-    well.setDisplaySize(TS*1.8, TS*1.8);
-    well.setDepth(wlY + TS*2);
-    // Water inside the well — fill-from-bottom based on practicals progress
-    this.wellFill = this.add.rectangle(wlX + TS, wlY + TS*0.9, TS*1.0, 1, 0x5fa8d8)
-      .setOrigin(0.5, 1).setDepth(wlY + TS*2 - 1);
-    this.wellFillBaseY = wlY + TS*1.5;
+    // (Well removed — practicals tracker is now part of the Farmhouse interaction.)
 
-    // ---- STUDY TREE (centre of map) — growth-stage aware ----
+    // ---- STUDY TREE (centre of map) — growth-stage aware, shadow scales with stage ----
     var stX = STUDY_TREE.c * TS, stY = STUDY_TREE.r * TS;
     var stW = STUDY_TREE.w * TS, stH = STUDY_TREE.h * TS;
     var centreX = stX + stW/2, baseY = stY + stH;
-    // Persistent shadow
-    this.treeShadow = self.add.graphics().setDepth(baseY - 1);
-    this.treeShadow.fillStyle(0x000000, 0.45);
-    this.treeShadow.fillEllipse(centreX, baseY + 2, stW*0.9, 16);
-    // Tree sprite — refreshed by refreshStudyTree() based on treeStage()
     this.studyTreeSprite = null;
+    this.studyTreeShadow = null;   // built fresh each refresh based on current stage
     this.studyTreeCentreX = centreX;
     this.studyTreeBaseY   = baseY;
     this.studyTreeMaxW    = stW;
-    this.studyTreeMaxH    = stH * 1.4; // tree sprite extends above its footprint
+    this.studyTreeMaxH    = stH * 1.4;
     this.refreshStudyTree();
 
     // ---- CAVE (top-right, beyond river) ----
@@ -576,16 +645,31 @@ var GardenScene = new Phaser.Class({
   refreshStudyTree: function(){
     var stage = treeStage();
     if (this.studyTreeSprite) this.studyTreeSprite.destroy();
+    if (this.studyTreeShadow) { this.studyTreeShadow.destroy(); this.studyTreeShadow = null; }
+
     if (stage === 0){
-      // Seedling
+      // Seedling — no shadow yet, just the seedling sprite at small size
       this.studyTreeSprite = this.add.image(this.studyTreeCentreX, this.studyTreeBaseY, 'seedling')
-        .setOrigin(0.5, 1).setDisplaySize(TILE*1.2, TILE*1.2).setDepth(this.studyTreeBaseY);
+        .setOrigin(0.5, 1).setDisplaySize(TILE*0.8, TILE*0.8).setDepth(this.studyTreeBaseY);
       return;
     }
-    // Source: Details32 cols 4-6 rows 6-8 = px(128, 192, 96, 96) — full green tree
+
+    // Source: Details32 cols 4-6 rows 6-8 = px(128, 192, 96, 96)
     var scale = [0, 0.30, 0.50, 0.70, 0.85, 1.00][stage];
     var w = this.studyTreeMaxW * scale;
     var h = this.studyTreeMaxH * scale;
+
+    // Shadow scaled to current canopy width; darker as the tree fills out
+    var shadowAlpha = 0.20 + scale * 0.25;   // 0.275 at stage 1 → 0.45 at stage 5
+    this.studyTreeShadow = this.add.graphics().setDepth(this.studyTreeBaseY - 1);
+    this.studyTreeShadow.fillStyle(0x000000, shadowAlpha);
+    this.studyTreeShadow.fillEllipse(
+      this.studyTreeCentreX,
+      this.studyTreeBaseY + 2,
+      w * 0.80,                // shadow width tracks canopy
+      6 + scale * 12           // shadow depth grows with stage (6px → 18px)
+    );
+
     this.studyTreeSprite = this._placeCropImage('ts_details', 128, 192, 96, 96,
       this.studyTreeCentreX, this.studyTreeBaseY, w, h, this.studyTreeBaseY);
   },
@@ -623,14 +707,15 @@ var GardenScene = new Phaser.Class({
     var cropPos = CROP_TILES[b.m][stage-1];
     var sx = cropPos[0] * 32, sy = cropPos[1] * 32;
 
-    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Each plant ~24-28px.
+    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Each plant is smaller now.
     var cols = 4, rows = 4;
-    var marginX = 8, marginY = 8;
+    var marginX = 10, marginY = 10;
     var usableW = bed.bw - marginX*2;
     var usableH = bed.bh - marginY*2;
     var stepX = usableW / (cols - 1);
     var stepY = usableH / (rows - 1);
-    var size = Math.min(TILE * (0.75 + stage*0.04), TILE * 0.95);
+    // Smaller crops: stage 1 = 18px, stage 5 = 22px (well under TILE size)
+    var size = 18 + stage * 1.0;
 
     // Slice the crop tile once and reuse
     var tkey = 'crop_'+b.m+'_s'+stage;
@@ -854,7 +939,6 @@ var GardenScene = new Phaser.Class({
     }
     solid(FARMHOUSE.c, FARMHOUSE.r, FARMHOUSE.w, FARMHOUSE.h);
     solid(NOTICEBOARD.c, NOTICEBOARD.r, 1, 1);
-    solid(WELL.c, WELL.r, 2, 2);
     solid(STUDY_TREE.c, STUDY_TREE.r, STUDY_TREE.w, STUDY_TREE.h);
     solid(CAVE.c, CAVE.r, CAVE.w, CAVE.h);
     BED_DEFS.forEach(function(b){
@@ -991,9 +1075,8 @@ var GardenScene = new Phaser.Class({
   buildInteractables: function(){
     // each: id, label, tile centre, radius (tiles)
     this.objs = [
-      { id:'house',     label:'FARMHOUSE — (coming soon)',  cx: FARMHOUSE.c + FARMHOUSE.w/2, cy: FARMHOUSE.r + FARMHOUSE.h/2, r:4.5 },
+      { id:'house',     label:'FARMHOUSE — Practicals',     cx: FARMHOUSE.c + FARMHOUSE.w/2, cy: FARMHOUSE.r + FARMHOUSE.h/2, r:4.5 },
       { id:'tree',      label:'STUDY TREE — Quizzes',        cx: STUDY_TREE.c + STUDY_TREE.w/2, cy: STUDY_TREE.r + STUDY_TREE.h/2, r:3.5 },
-      { id:'well',      label:'WELL — Practicals',           cx: WELL.c + 1, cy: WELL.r + 1, r:2.5 },
       { id:'mailbox',   label:'NOTICEBOARD — Messages',      cx: NOTICEBOARD.c + 0.5, cy: NOTICEBOARD.r + 0.5, r:2.0 },
       { id:'cave',      label:'CAVE — Extension',            cx: CAVE.c + CAVE.w/2, cy: CAVE.r + CAVE.h/2, r:4.0 }
     ];
@@ -1066,13 +1149,6 @@ var GardenScene = new Phaser.Class({
       this.hint.setText('[E]  '+o.label).setVisible(true);
     } else {
       this.hint.setVisible(false);
-    }
-    // Update well water level
-    if (this.wellFill){
-      var lvl = wellLevel();
-      var maxH = TILE * 1.1;
-      this.wellFill.height = maxH * lvl;
-      this.wellFill.y = this.wellFillBaseY;
     }
   },
 

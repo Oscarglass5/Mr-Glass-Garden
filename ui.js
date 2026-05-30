@@ -27,8 +27,9 @@ function openModal(id, scene){
   ov.classList.add('open');
 
   if (id==='house'){
-    title.textContent='FARMHOUSE';
-    body.innerHTML = '<p class="note" style="font-size:13px;line-height:1.7">The farmhouse is being renovated. New tools coming soon.</p>';
+    title.textContent='FARMHOUSE — PRACTICALS';
+    body.innerHTML = wellHTML();   // reuses the practicals UI; "well" is just a function name now
+    attachPR();
   }
   else if (id==='farmer'){
     title.textContent='THE FARMER';
@@ -37,7 +38,6 @@ function openModal(id, scene){
     attachFarmerPicker();
   }
   else if (id==='tree'){ title.textContent='STUDY TREE — QUIZZES'; body.innerHTML = treeHTML(); attachQZ(); }
-  else if (id==='well'){ title.textContent='WELL — PRACTICALS'; body.innerHTML = wellHTML(); attachPR(); }
   else if (id==='mailbox'){
     title.textContent='NOTICEBOARD — MESSAGES'; body.innerHTML = mailHTML();
     CONFIG_MAIL.forEach(function(_,i){ if(ST.mailRead.indexOf(i)===-1) ST.mailRead.push(i); });
@@ -176,11 +176,14 @@ function attachQZ(){
 //  WELL — practicals
 // ============================================================
 function wellHTML(){
+  // Practicals tracker (originally the Well; now opened from the Farmhouse).
+  // Kept the function name for minimal churn.
   var d=0; Object.keys(ST.pr).forEach(function(k){ if(ST.pr[k]) d++; });
   var pct = Math.round(d/CONFIG_PRACTICALS.length*100);
   var h = '<div class="stats"><div class="stat"><label>LOGGED</label><b style="color:#40a020">'+d+'/'+CONFIG_PRACTICALS.length+'</b></div>'
-        + '<div class="stat"><label>WELL LEVEL</label><b style="color:#4878d8">'+pct+'%</b></div></div>';
+        + '<div class="stat"><label>PROGRESS</label><b style="color:#4878d8">'+pct+'%</b></div></div>';
   h += '<div class="pbar"><div class="pfill" style="width:'+pct+'%;background:'+pbColor(pct/100)+'"></div></div>';
+  h += '<p class="note">Mark off each practical as you complete it.</p>';
   CONFIG_PRACTICALS.forEach(function(p,i){
     var key = 'p'+i, dn = ST.pr[key];
     h += '<div class="row" data-k="'+key+'"><span>'+p+'</span><i class="chk '+(dn?'on':'')+'">'+(dn?'&#10003;':'')+'</i></div>';
@@ -192,7 +195,7 @@ function attachPR(){
     if (el.dataset.k.indexOf('p')!==0) return;
     el.onclick = function(){
       ST.pr[el.dataset.k] = !ST.pr[el.dataset.k]; saveState();
-      if (_modalScene) _modalScene.showToast('Practical logged — the well fills!');
+      if (_modalScene) _modalScene.showToast('Practical logged.');
       document.getElementById('modal-body').innerHTML = wellHTML(); attachPR();
     };
   });
