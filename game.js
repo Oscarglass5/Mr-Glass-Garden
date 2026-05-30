@@ -130,15 +130,17 @@ function checkAchievements(scene){
 //   Cave entrance: cols 10-12 rows 5-7 -> px(320,160,96,96)
 
 // Position of major structures (tile coords)
-var FARMHOUSE = { c:1, r:1, w:5, h:6 };   // place at cols 1-5, rows 1-6 (scaled up slightly)
-var NOTICEBOARD = { c:6, r:6 };
-var WELL = { c:7, r:7 };
+// All structures sit inside the fenced area (top fence at row 2, west fence at col 2),
+// leaving rows 0-1 and cols 0-1 as grass that's visible-but-unreachable beyond the fence.
+var FARMHOUSE = { c:3, r:3, w:5, h:6 };   // cols 3-7, rows 3-8
+var NOTICEBOARD = { c:8, r:8 };
+var WELL = { c:9, r:9 };
 var STUDY_TREE = { c:18, r:11, w:3, h:3 }; // 3x3 footprint
 var CAVE = { c:36, r:0, w:3, h:3 };        // top-right, ACROSS the river/waterfall channel
 
-// Garden beds (spread out, 4-tile-wide, 4-tile-tall footprints)
+// Garden beds — M1 shifted east to avoid the new west fence
 var BED_DEFS = [
-  { m:'m1', cropKey:'crop_m1', c1:2,  r1:18, c2:5,  r2:21, title:'M1: CELLS' },
+  { m:'m1', cropKey:'crop_m1', c1:4,  r1:18, c2:7,  r2:21, title:'M1: CELLS' },
   { m:'m2', cropKey:'crop_m2', c1:26, r1:4,  c2:29, r2:7,  title:'M2: ORGANISATION' },
   { m:'m3', cropKey:'crop_m3', c1:27, r1:17, c2:30, r2:20, title:'M3: DIVERSITY' },
   { m:'m4', cropKey:'crop_m4', c1:13, r1:21, c2:16, r2:24, title:'M4: ECOSYSTEMS' }
@@ -180,6 +182,8 @@ var BootScene = new Phaser.Class({
     this.load.image('ts_terrainEx', A+'TerrainExpanded32.png');
 
     // Existing assets we still use
+    this.load.image('terrain',    A+'Terrain.png');       // bright-green grass (the old look)
+    this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
@@ -187,16 +191,8 @@ var BootScene = new Phaser.Class({
     this.load.spritesheet('birdfly', A+'Bird_fly.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('birdtakeoff', A+'Bird_take-off.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('leaves', A+'Leaves.png', { frameWidth:16, frameHeight:16 });
-    this.load.spritesheet('drops', A+'Drops.png', { frameWidth:16, frameHeight:16 });
     this.load.image('seedling', A+'Hole_with_a_seedling.png');
-    this.load.image('treeshadow', A+'Tree_shadow.png');
     this.load.image('pondborder', A+'PondBorders.png'); // re-used as the well
-    // Scatter decor — trees + flowers from the original asset set
-    this.load.image('commontree', A+'Common_tree.png');
-    this.load.image('birch',      A+'Birch.png');
-    this.load.image('fir',        A+'Fir.png');
-    this.load.image('appletree',  A+'Apple_tree.png');
-    this.load.image('flowers',    A+'Flowers.png');
   },
   create: function(){ buildAnimations(this); this.scene.start('Garden'); }
 });
@@ -314,33 +310,31 @@ var GardenScene = new Phaser.Class({
     for (var c=17; c<=21; c++){ p(c, 10); p(c, 14); }
     for (var r=11; r<=13; r++){ p(17, r); p(21, r); }
 
-    // Path from farmhouse south to the centre ring
-    for (var r=7; r<=10; r++) p(4, r);
-    for (var c=4; c<=17; c++) p(c, 10);
+    // Path from farmhouse (front door around col 6 row 9) south to the centre ring
+    for (var r=9; r<=12; r++) p(6, r);
+    for (var c=6; c<=17; c++) p(c, 12);
 
-    // Path south to M1 bed (cols 2-5, rows 18-21) — col 4 down then west under bed
-    for (var r=11; r<=17; r++) p(4, r);
-    for (var c=2; c<=7; c++)  p(c, 17);
+    // Path south to M1 bed (cols 4-7, rows 18-21) — col 6 down then along its north edge
+    for (var r=13; r<=17; r++) p(6, r);
+    for (var c=4; c<=7; c++)  p(c, 17);
 
     // Path NE to M2 bed (cols 26-29, rows 4-7)
-    for (var c=21; c<=25; c++) p(c, 9);
-    for (var r=4;  r<=9;  r++) p(25, r);
+    for (var c=22; c<=25; c++) p(c, 10);
+    for (var r=4;  r<=10; r++) p(25, r);
 
     // Path east to M3 bed (cols 27-30, rows 17-20)
-    for (var c=21; c<=26; c++) p(c, 15);
-    for (var r=15; r<=17; r++) p(26, r);
+    for (var c=22; c<=26; c++) p(c, 15);
+    for (var r=15; r<=19; r++) p(26, r);
 
     // Path south to M4 bed (cols 13-16, rows 21-24)
     for (var r=14; r<=20; r++) p(17, r);
     for (var c=13; c<=17; c++) p(c, 20);
 
-    // Path east heading toward the cave — terminates at the river (col 32)
+    // Path east heading toward the cave — terminates just shy of the river (col 32)
     for (var c=22; c<=32; c++) p(c, 12);
 
     // Cave-side path (on the FAR bank of the river)
-    // Cave at cols 36-38 rows 0-2; path runs south from col 37
     for (var r=3; r<=26; r++) p(37, r);
-    // Path along the foot of the cave entrance
     for (var c=36; c<=38; c++) p(c, 3);
 
     // ---- Garden bed soil overrides path/grass ----
@@ -361,52 +355,41 @@ var GardenScene = new Phaser.Class({
     var TS = 32;
 
     var terrA5 = this.textures.get('ts_terrainA5').getSourceImage();
-    var terrEx = this.textures.get('ts_terrainEx').getSourceImage();
+    var terrOld = this.textures.get('terrain').getSourceImage();      // bright green grass
+    var gardenbeds = this.textures.get('gardenbeds').getSourceImage(); // soil texture
 
-    // Helper: draw a 32px tile from a sheet at (sc,sr) tile coords to (dx,dy) world px
-    function drawTile(img, sc, sr, dx, dy){
-      ctx.drawImage(img, sc*TS, sr*TS, TS, TS, dx, dy, TS, TS);
+    // Helper: draw a 32px tile from a sheet at (sc,sr) tile coords on TerrainA5
+    function drawA5(sc, sr, dx, dy){
+      ctx.drawImage(terrA5, sc*TS, sr*TS, TS, TS, dx, dy, TS, TS);
+    }
+    // Old Terrain.png grass is 16x16 source, scaled up to 32x32 destination
+    function drawGrassOld(variantCol, dx, dy){
+      ctx.drawImage(terrOld, variantCol*16, 0, 16, 16, dx, dy, TS, TS);
+    }
+    // Garden_beds.png soil — 16x16 source, scaled to 32x32. 3 col x 2 row of interior soil.
+    function drawSoil(sc, sr, dx, dy){
+      ctx.drawImage(gardenbeds, sc*16, sr*16, 16, 16, dx, dy, TS, TS);
     }
 
-    // Grass variants (TerrainA5 row 0): cols 1,2 plain; cols 3,4 with tufts
-    // We retint slightly darker for nicer contrast with paths. Approach: draw, then
-    // overlay a 12% black wash on the whole grass field for cohesion.
+    // ---- GRASS — bright-green old Terrain.png, 3 variants, deterministic per tile ----
     for (var r=0;r<MAP_H;r++){
       for (var c=0;c<MAP_W;c++){
         if (TM[r][c] === T_GRASS){
           var h = ((c*2654435761)^(r*2246822519))>>>0;
-          var v = h % 10;
-          var sc = (v<6) ? 1 : (v<8 ? 2 : (v<9 ? 3 : 4));
-          drawTile(terrA5, sc, 0, c*TS, r*TS);
+          drawGrassOld(h % 3, c*TS, r*TS);
         }
       }
     }
-    // Subtle darkening wash on grass for richer palette
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
-    for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
-      if (TM[r][c] === T_GRASS) ctx.fillRect(c*TS, r*TS, TS, TS);
-    }
 
-    // Garden bed soil — use a brown wash plus subtle texture
+    // ---- GARDEN BED SOIL — old Garden_beds.png interior tiles ----
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] === T_DIRT){
-        ctx.fillStyle = '#6b4a26';
-        ctx.fillRect(c*TS, r*TS, TS, TS);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
         var h = ((c*1597334677)^(r*3812015801))>>>0;
-        for (var i=0;i<5;i++){
-          var sx = (h>>>(i*3)) & 31, sy = (h>>>(i*4+1)) & 31;
-          ctx.fillRect(c*TS+sx, r*TS+sy, 2, 2);
-        }
-        ctx.strokeStyle = '#3e2a14';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(c*TS+0.5, r*TS+0.5, TS-1, TS-1);
+        drawSoil(h % 3, h % 2, c*TS, r*TS);
       }
     }
 
-    // Path tiles — auto-tile based on neighbours.
-    // Map of 8-neighbour pattern -> (sc,sr) tile pick.
-    // We use only N/S/E/W edges for picking the 9-cell autotile (cols 0-3, rows 1-3).
+    // ---- PATH tiles — auto-tile from TerrainA5 (cols 0-3, rows 1-3) ----
     function isPath(c, r){
       if (r<0||r>=MAP_H||c<0||c>=MAP_W) return false;
       return TM[r][c] === T_PATH;
@@ -417,13 +400,12 @@ var GardenScene = new Phaser.Class({
       var s = !isPath(c, r+1);
       var e = !isPath(c+1, r);
       var w = !isPath(c-1, r);
-      // Pick tile column (0..3) and row (1..3) on TerrainA5
       var sc = w ? 0 : (e ? 3 : 1);
       var sr = n ? 1 : (s ? 3 : 2);
-      drawTile(terrA5, sc, sr, c*TS, r*TS);
+      drawA5(sc, sr, c*TS, r*TS);
     }
 
-    // Water cells — base colour first (animated sprites layered on top in next step)
+    // ---- WATER base colour (animated sprites layered on top) ----
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL){
         ctx.fillStyle = '#4a8ec8';
@@ -431,11 +413,9 @@ var GardenScene = new Phaser.Class({
       }
     }
 
-    // Stone borders around water (rock rim where water meets non-water)
+    // ---- Stone rim around water (rock edge where water meets land) ----
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] !== T_WATER && TM[r][c] !== T_WATERFALL) continue;
-      // Pick neighbour-aware rock edge tile from TerrainEx (cols 5-7 rows 4-6 are rock walls; we use simple darken)
-      // Quick approach: overlay dark stone rim on the outer edges of water
       ctx.fillStyle = '#3a3a48';
       var below = (r+1<MAP_H && TM[r+1][c] !== T_WATER && TM[r+1][c] !== T_WATERFALL);
       var above = (r-1>=0 && TM[r-1][c] !== T_WATER && TM[r-1][c] !== T_WATERFALL);
@@ -447,7 +427,7 @@ var GardenScene = new Phaser.Class({
       if (left)  ctx.fillRect(c*TS, r*TS, 3, TS);
     }
 
-    // Path edge shadow (small drop into grass)
+    // ---- Path edge shadow (small drop into grass) ----
     ctx.fillStyle='rgba(0,0,0,0.22)';
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] === T_PATH){
@@ -467,14 +447,12 @@ var GardenScene = new Phaser.Class({
         w.setDisplaySize(TS, TS);
         w.play('water-anim');
         w.anims.setProgress(((c+r)%3)/3);
-        // Slightly darker tint over the river/pond water for richer palette
         w.setTint(0x8fc0e0);
         w.setAlpha(0.92);
         this.waterTiles.push(w);
       }
     }
-    // ---- Waterfall band: stack the TerrainA5 waterfall tiles vertically at top of channel ----
-    // Sheet tile rows for the waterfall: top=(5..7,1), mid=(5..7,2..5), bottom=(5..7,6)
+    // ---- Waterfall band ----
     for (var rr=0; rr<=2; rr++){
       for (var ci=0; ci<3; ci++){
         var sx = (5+ci)*TS, sy;
@@ -510,17 +488,20 @@ var GardenScene = new Phaser.Class({
   // ============================================================
   buildBorders: function(){
     var TS = TILE;
-    // Top fence: row 0, cols 0..32 (stops just before the waterfall at col 33)
+    // Horizontal picket fence (Details32 col 5 row 1) for the TOP fence
     var fenceH_sx = 5*TS, fenceH_sy = 1*TS;
-    var fenceV_sx = 5*TS, fenceV_sy = 1*TS;
-    for (var c=0; c<=32; c++){
+    // Vertical single-post fence (Details32 col 4 row 1) for the WEST fence
+    var fenceV_sx = 4*TS, fenceV_sy = 1*TS;
+
+    // Top fence: row 2, cols 2..32 (rows 0-1 stay grass to suggest world continues north)
+    for (var c=2; c<=32; c++){
       this._placeCropImage('ts_details', fenceH_sx, fenceH_sy, TS, TS,
-        c*TS + TS/2, 0*TS + TS, TS, TS, 0*TS + TS + 1);
+        c*TS + TS/2, 2*TS + TS, TS, TS, 2*TS + TS + 1);
     }
-    // Left fence: col 0, rows 0..21 (stops before the pond at row 22)
-    for (var r=0; r<=21; r++){
+    // West fence: col 2, rows 3..21 (cols 0-1 stay grass to suggest world continues west)
+    for (var r=3; r<=21; r++){
       this._placeCropImage('ts_details', fenceV_sx, fenceV_sy, TS, TS,
-        0*TS + TS/2, r*TS + TS, TS, TS, r*TS + TS + 1);
+        2*TS + TS/2, r*TS + TS, TS, TS, r*TS + TS + 1);
     }
   },
 
@@ -642,28 +623,32 @@ var GardenScene = new Phaser.Class({
     var cropPos = CROP_TILES[b.m][stage-1];
     var sx = cropPos[0] * 32, sy = cropPos[1] * 32;
 
-    // Grid: 2 cols x 2 rows = 4 plants total, spread to the edges of the bed
-    // Each plant ~28-32px depending on stage.
-    var cols = 2, rows = 2;
-    var marginX = 6, marginY = 6;
+    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Each plant ~24-28px.
+    var cols = 4, rows = 4;
+    var marginX = 8, marginY = 8;
     var usableW = bed.bw - marginX*2;
     var usableH = bed.bh - marginY*2;
     var stepX = usableW / (cols - 1);
     var stepY = usableH / (rows - 1);
-    var size = Math.min(TILE * (0.85 + stage*0.05), TILE * 1.15);
+    var size = Math.min(TILE * (0.75 + stage*0.04), TILE * 0.95);
+
+    // Slice the crop tile once and reuse
+    var tkey = 'crop_'+b.m+'_s'+stage;
+    if (!this.textures.exists(tkey)){
+      var src = this.textures.get('ts_crops').getSourceImage();
+      var cnv = this.textures.createCanvas(tkey, 32, 32);
+      cnv.getContext().drawImage(src, sx, sy, 32, 32, 0, 0, 32, 32);
+      cnv.refresh();
+    }
 
     for (var ri=0; ri<rows; ri++){
       for (var ci=0; ci<cols; ci++){
-        var px = bed.x1 + marginX + ci*stepX;
-        var py = bed.y1 + marginY + ri*stepY;
-        // Slice the crop tile from Crops32 into a unique texture and place it
-        var tkey = 'crop_'+b.m+'_s'+stage;
-        if (!this.textures.exists(tkey)){
-          var src = this.textures.get('ts_crops').getSourceImage();
-          var cnv = this.textures.createCanvas(tkey, 32, 32);
-          cnv.getContext().drawImage(src, sx, sy, 32, 32, 0, 0, 32, 32);
-          cnv.refresh();
-        }
+        // Slight jitter for a natural farm look (deterministic per cell)
+        var hh = ((b.c1+ci)*73 ^ (b.r1+ri)*131 ^ stage*17) >>> 0;
+        var jx = ((hh >>> 3) % 5) - 2;
+        var jy = ((hh >>> 7) % 5) - 2;
+        var px = bed.x1 + marginX + ci*stepX + jx;
+        var py = bed.y1 + marginY + ri*stepY + jy;
         var s = this.add.image(px, py, tkey).setOrigin(0.5, 0.5).setDisplaySize(size, size);
         bed.plants.add(s);
       }
@@ -671,24 +656,20 @@ var GardenScene = new Phaser.Class({
   },
 
   // ============================================================
-  //  DECORATIONS — scattered trees + denser flowers (deterministic)
+  //  DECORATIONS — Details32 trees only, procedurally shadowed
   // ============================================================
   buildDecorations: function(){
     var self = this;
     var TS = TILE;
     var TM = this.TM;
 
-    // Deterministic hash: same world layout every reload, different per "salt"
     function hash(c, r, salt){
       return ((c * 2654435761) ^ (r * 2246822519) ^ (salt * 3266489917)) >>> 0;
     }
-    // Is this tile clean grass and clear of paths/structures/water?
     function isOpenGrass(c, r){
-      if (c < 1 || c > MAP_W-2 || r < 1 || r > MAP_H-2) return false;
-      if (TM[r][c] !== T_GRASS) return false;
-      return true;
+      if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return false;
+      return TM[r][c] === T_GRASS;
     }
-    // Is any neighbour within `n` tiles a path or a bed? (used to keep trees off path edges)
     function nearPathOrBed(c, r, n){
       for (var dr=-n; dr<=n; dr++){
         for (var dc=-n; dc<=n; dc++){
@@ -699,13 +680,11 @@ var GardenScene = new Phaser.Class({
       }
       return false;
     }
-    // Reserved zones (tile coords): don't place trees inside these.
-    // Keeps the area around the player spawn, buildings, and the cave-side strip clear.
+    // Reserved zones: keep clear of spawn, structures, central ring, cave strip
     var RESERVED = [
-      { c1:0,  r1:0,  c2:8,  r2:9  },  // farmhouse cluster + spawn area
-      { c1:5,  r1:5,  c2:10, r2:10 },  // around well & noticeboard
-      { c1:15, r1:8,  c2:23, r2:16 },  // central study-tree ring + a buffer
-      { c1:36, r1:0,  c2:39, r2:29 }   // cave-side strip (player never sees up close)
+      { c1:2,  r1:3,  c2:10, r2:11 },  // farmhouse + well + noticeboard + spawn
+      { c1:15, r1:8,  c2:23, r2:16 },  // central study-tree ring + buffer
+      { c1:36, r1:0,  c2:39, r2:29 }   // cave-side strip
     ];
     function inReserved(c, r){
       for (var i=0;i<RESERVED.length;i++){
@@ -715,102 +694,47 @@ var GardenScene = new Phaser.Class({
       return false;
     }
 
-    // ---- TREE VARIANTS — picked from Common_tree, Birch, Fir, Apple_tree ----
-    // Each has source rect on its sheet plus a target display size in tiles.
+    // Three tree variants from Details32 (the only tree assets allowed):
+    //   Orange/fall tree:  cols 1-3 rows 6-8  -> px(32, 192, 96, 96)
+    //   Green leafy tree:  cols 4-6 rows 6-8  -> px(128, 192, 96, 96)
+    //   Conifer/fir tree:  cols 1-3 rows 9-11 -> px(32, 288, 96, 96)
     var TREE_VARIANTS = [
-      // Common_tree — three lush variants
-      { key:'commontree', sx:256, sy:16,  sw:144, sh:192, dispW:2.8, dispH:3.6 },
-      { key:'commontree', sx:16,  sy:80,  sw:128, sh:144, dispW:2.4, dispH:2.8 },
-      { key:'commontree', sx:144, sy:16,  sw:128, sh:192, dispW:2.6, dispH:3.6 },
-      // Birch
-      { key:'birch',      sx:128, sy:16,  sw:128, sh:160, dispW:2.4, dispH:3.2 },
-      { key:'birch',      sx:40,  sy:48,  sw:80,  sh:144, dispW:1.8, dispH:3.0 },
-      // Fir
-      { key:'fir',        sx:96,  sy:0,   sw:80,  sh:144, dispW:1.9, dispH:3.2 },
-      { key:'fir',        sx:0,   sy:80,  sw:64,  sh:80,  dispW:1.5, dispH:2.0 },
-      // Apple_tree — blossom + fruiting variants for variety
-      { key:'appletree',  sx:128, sy:32,  sw:128, sh:160, dispW:2.4, dispH:3.0 },
-      { key:'appletree',  sx:256, sy:32,  sw:128, sh:160, dispW:2.4, dispH:3.0 },
-      { key:'appletree',  sx:16,  sy:336, sw:128, sh:160, dispW:2.4, dispH:3.0 }
+      { sx:32,  sy:192, sw:96, sh:96, dispW:2.4, dispH:2.6 },  // orange/fall
+      { sx:128, sy:192, sw:96, sh:96, dispW:2.4, dispH:2.6 },  // green leafy
+      { sx:32,  sy:288, sw:96, sh:96, dispW:2.0, dispH:2.8 }   // conifer
     ];
 
-    // ---- Scatter trees ----
-    var placedTrees = [];      // [c, r] of placed positions for min-distance check
-    var MIN_TREE_DIST = 3.5;   // tiles between trees
-    for (var r=1; r<MAP_H-1; r++){
-      for (var c=1; c<MAP_W-1; c++){
+    // ---- Scatter trees deterministically ----
+    var placed = [];
+    var MIN_TREE_DIST = 3.2;
+    for (var r=0; r<MAP_H; r++){
+      for (var c=0; c<MAP_W; c++){
         if (!isOpenGrass(c, r)) continue;
         if (inReserved(c, r)) continue;
-        if (nearPathOrBed(c, r, 1)) continue;        // not right next to a path/bed
+        if (nearPathOrBed(c, r, 1)) continue;
         var h = hash(c, r, 11);
-        if ((h % 100) >= 5) continue;                // ~5% base chance
-        // Min distance to other trees
+        if ((h % 100) >= 6) continue;          // ~6% chance
+        // min-distance vs other trees
         var tooClose = false;
-        for (var ti=0; ti<placedTrees.length; ti++){
-          var dx = placedTrees[ti][0]-c, dy = placedTrees[ti][1]-r;
+        for (var ti=0; ti<placed.length; ti++){
+          var dx = placed[ti][0]-c, dy = placed[ti][1]-r;
           if (dx*dx + dy*dy < MIN_TREE_DIST*MIN_TREE_DIST){ tooClose = true; break; }
         }
         if (tooClose) continue;
-        placedTrees.push([c, r]);
+        placed.push([c, r]);
         var variant = TREE_VARIANTS[h % TREE_VARIANTS.length];
-        // Slight pixel-level jitter so trees don't sit on perfectly even grid lines
-        var jx = ((h >>> 8) % 11) - 5;
-        var jy = ((h >>> 4) % 7) - 3;
+        var jx = ((h >>> 8) % 9) - 4;
+        var jy = ((h >>> 4) % 5) - 2;
         var wx = c*TS + TS/2 + jx;
         var wy = r*TS + TS + jy;
-        // Drop shadow
+        // Procedural drop shadow (no Tree_shadow.png needed)
         var sg = self.add.graphics().setDepth(wy - 1);
         sg.fillStyle(0x000000, 0.40);
         sg.fillEllipse(wx, wy + 2, TS * variant.dispW * 0.65, 10);
-        self._placeCropImage(variant.key, variant.sx, variant.sy, variant.sw, variant.sh,
+        self._placeCropImage('ts_details', variant.sx, variant.sy, variant.sw, variant.sh,
           wx, wy, TS * variant.dispW, TS * variant.dispH, wy);
       }
     }
-
-    // ---- Scatter flowers (denser, allowed near paths for a cosy feel) ----
-    // Flowers.png: 4 cells across (16 wide each), each cell 16x32. We pull the
-    // bottom portion of each cell where the tulip is drawn.
-    for (var r=1; r<MAP_H-1; r++){
-      for (var c=1; c<MAP_W-1; c++){
-        if (!isOpenGrass(c, r)) continue;
-        if (inReserved(c, r) && !(c>=15 && c<=23 && r>=8 && r<=16)) continue;
-        // Allow flowers inside the central tree ring (cosy feel near focal point)
-        var h = hash(c, r, 23);
-        if ((h % 100) >= 14) continue;               // ~14% chance — denser than trees
-        // Don't overlap trees
-        var tooCloseToTree = false;
-        for (var ti=0; ti<placedTrees.length; ti++){
-          var dx = placedTrees[ti][0]-c, dy = placedTrees[ti][1]-r;
-          if (dx*dx + dy*dy < 1.5*1.5){ tooCloseToTree = true; break; }
-        }
-        if (tooCloseToTree) continue;
-        // Up to 1-3 flower sprites per tile (clusters look cosier)
-        var clusterSize = 1 + ((h >>> 12) % 3);
-        for (var k=0; k<clusterSize; k++){
-          var jx = ((h >>> (k*5)) % 22) - 11;
-          var jy = ((h >>> (k*5 + 3)) % 14) - 7;
-          var wx = c*TS + TS/2 + jx;
-          var wy = r*TS + TS + jy;
-          var variant = ((h >>> (k*7)) % 4);
-          self._placeCropImage('flowers', variant*16, 9, 16, 22,
-            wx, wy, TS*0.55, TS*0.85, wy);
-        }
-      }
-    }
-
-    // ---- A few hand-placed mushrooms / stones near tree groupings for charm ----
-    // (uses tiny details from Details32; deliberately sparse)
-    var stoneSpots = [[10,8],[27,11],[12,15]];
-    stoneSpots.forEach(function(p, i){
-      if (TM[p[1]][p[0]] !== T_GRASS) return;
-      var stoneTiles = [[1,4],[2,4],[3,4]];
-      var s = stoneTiles[i % 3];
-      var wx = p[0]*TS + TS/2, wy = p[1]*TS + TS;
-      var g = self.add.graphics().setDepth(wy - 1);
-      g.fillStyle(0x000000, 0.35);
-      g.fillEllipse(wx, wy, TS*0.6, 6);
-      self._placeCropImage('ts_details', s[0]*32, s[1]*32, 32, 32, wx, wy, TS*0.85, TS*0.85, wy);
-    });
   },
 
   // ============================================================
@@ -858,23 +782,6 @@ var GardenScene = new Phaser.Class({
       lf.wob=Math.random()*Math.PI*2;
       this.leaves.push(lf);
     }
-
-    // Rain (Drops.png) — light, persistent drizzle across the whole world
-    this.raindrops = [];
-    var NUM_DROPS = 40;
-    for (var i=0;i<NUM_DROPS;i++){
-      var frame = Math.floor(Math.random()*8);
-      var rd = this.add.image(
-        Math.random()*WORLD_W,
-        Math.random()*WORLD_H,
-        'drops', frame
-      ).setDepth(9700).setAlpha(0.55);
-      rd.vx = -0.4 - Math.random()*0.4;   // slight leftward drift (wind)
-      rd.vy = 3.2 + Math.random()*2.0;     // 3.2 - 5.2 px/frame
-      rd.frameRotate = Math.floor(Math.random()*30) + 12;  // change frame every N frames
-      rd.frameCount = 0;
-      this.raindrops.push(rd);
-    }
   },
 
   updateCreatures: function(){
@@ -919,31 +826,14 @@ var GardenScene = new Phaser.Class({
       if (lf.y > WORLD_H){ lf.y=0; lf.x=Math.random()*WORLD_W; lf.setFrame(Math.floor(Math.random()*8)); }
       if (lf.x < 0) lf.x = WORLD_W;
     });
-    // Rain
-    if (this.raindrops){
-      this.raindrops.forEach(function(rd){
-        rd.x += rd.vx;
-        rd.y += rd.vy;
-        rd.frameCount++;
-        if (rd.frameCount >= rd.frameRotate){
-          rd.frameCount = 0;
-          rd.setFrame(Math.floor(Math.random()*8));
-        }
-        if (rd.y > WORLD_H + 16){
-          rd.y = -16 - Math.random()*40;
-          rd.x = Math.random() * WORLD_W;
-        }
-        if (rd.x < -16) rd.x = WORLD_W + 16;
-      });
-    }
   },
 
   // ============================================================
   //  PLAYER + collision
   // ============================================================
   buildPlayer: function(){
-    // Spawn just outside the farmhouse front door (~ col 3, row 8)
-    this.player = this.physics.add.sprite(3*TILE + TILE/2, 8*TILE + TILE/2, 'player', 0);
+    // Spawn just south of the (shifted) farmhouse front door
+    this.player = this.physics.add.sprite(6*TILE + TILE/2, 10*TILE + TILE/2, 'player', 0);
     this.player.setOrigin(0.5, 0.85);
     this.player.body.setSize(20, 16);
     this.player.body.setOffset(30, 56);
@@ -962,27 +852,20 @@ var GardenScene = new Phaser.Class({
       self.physics.add.existing(r, true);
       self.solids.add(r);
     }
-    // Farmhouse footprint
     solid(FARMHOUSE.c, FARMHOUSE.r, FARMHOUSE.w, FARMHOUSE.h);
-    // Noticeboard
     solid(NOTICEBOARD.c, NOTICEBOARD.r, 1, 1);
-    // Well
     solid(WELL.c, WELL.r, 2, 2);
-    // Study tree
     solid(STUDY_TREE.c, STUDY_TREE.r, STUDY_TREE.w, STUDY_TREE.h);
-    // Cave block (cosmetic — player can't reach it anyway because of river)
     solid(CAVE.c, CAVE.r, CAVE.w, CAVE.h);
-    // Garden beds
     BED_DEFS.forEach(function(b){
       solid(b.c1, b.r1, b.c2-b.c1+1, b.r2-b.r1+1);
     });
-    // Top fence (row 0 cols 0..32)
-    solid(0, 0, 33, 1);
-    // Left fence (col 0 rows 0..21)
-    solid(0, 0, 1, 22);
-    // Water cells — turn TM scan into a tight rectangle set so the player can't cross the river or pond
+    // Top fence: row 2, cols 2..32
+    solid(2, 2, 31, 1);
+    // West fence: col 2, rows 2..21 (includes the corner with the top fence)
+    solid(2, 2, 1, 20);
+    // Water cells — row-by-row horizontal runs
     var TM = this.TM;
-    // Build merged collision rectangles row-by-row (simple horizontal runs)
     for (var r=0; r<MAP_H; r++){
       var c = 0;
       while (c < MAP_W){
@@ -1027,16 +910,16 @@ var GardenScene = new Phaser.Class({
     // Patrol waypoints: each one is a path tile next to a bed, alternating with
     // a central-ring rest spot. The route is verified against the path layout above.
     this.farmerRoute = [
-      // Near M1 (SW bed) — on path north of bed
-      { x: 4*TS + TS/2,  y: 17*TS + TS/2, face:'down'  },
+      // Near M1 (SW bed, now cols 4-7) — on path north of bed
+      { x: 6*TS + TS/2,  y: 17*TS + TS/2, face:'down'  },
       // Centre ring west side
       { x: 17*TS + TS/2, y: 12*TS + TS/2, face:'right' },
-      // Near M2 (NE bed) — on path south of bed
+      // Near M2 (NE bed) — on path west of bed
       { x: 25*TS + TS/2, y: 8*TS  + TS/2, face:'right' },
       // Centre ring east side
       { x: 21*TS + TS/2, y: 12*TS + TS/2, face:'down'  },
       // Near M3 (E bed) — on path west of bed
-      { x: 26*TS + TS/2, y: 16*TS + TS/2, face:'right' },
+      { x: 26*TS + TS/2, y: 17*TS + TS/2, face:'right' },
       // Centre ring south
       { x: 21*TS + TS/2, y: 14*TS + TS/2, face:'left'  },
       // Near M4 (S bed) — on path north of bed

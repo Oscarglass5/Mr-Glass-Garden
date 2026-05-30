@@ -11,7 +11,9 @@
     font-family: 'Courier New', monospace; }
   #game-container { width: 100vw; height: 100vh; display: flex;
     align-items: center; justify-content: center; }
-  canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges;
+    /* Stardew Valley-ish hue: gently warm, saturated, slightly higher contrast */
+    filter: saturate(1.18) brightness(1.03) contrast(1.06) hue-rotate(-4deg); }
 
   /* ---- modal ---- */
   #modal-overlay { position: fixed; inset: 0; background: rgba(4,3,1,0.82);
