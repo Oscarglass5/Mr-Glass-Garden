@@ -156,19 +156,26 @@ function applyAppearance(scene){
     srcCnv.getContext('2d').drawImage(orig, 0, 0);
     scene.textures.addCanvas('player_src', srcCnv);
 
-    // Replace the 'player' texture (one-time) with a canvas we'll repaint
-    var liveCnv = document.createElement('canvas');
-    liveCnv.width = orig.width; liveCnv.height = orig.height;
-    liveCnv.getContext('2d').drawImage(orig, 0, 0);
+    // Replace the 'player' texture (one-time) with a canvas we'll repaint.
+    // Using addSpriteSheet so the existing animations (which reference frame
+    // indices on 'player') continue to work.
+    var liveCnv0 = document.createElement('canvas');
+    liveCnv0.width = orig.width; liveCnv0.height = orig.height;
+    liveCnv0.getContext('2d').drawImage(orig, 0, 0);
     scene.textures.remove('player');
-    scene.textures.addSpriteSheet('player', liveCnv, { frameWidth:80, frameHeight:80 });
-    scene._playerLiveCanvas = liveCnv;
+    scene.textures.addSpriteSheet('player', liveCnv0, { frameWidth:80, frameHeight:80 });
   }
 
-  // Repaint the live canvas: start from the stashed original
-  var liveCnv = scene._playerLiveCanvas;
-  var ctx = liveCnv.getContext('2d');
+  // Look up the live canvas FROM the texture source rather than a scene attribute.
+  // (Different scenes share the global texture manager, so storing the canvas on
+  // one scene's `this` doesn't help another scene that calls this function.)
+  var tex = scene.textures.get('player');
+  if (!tex || !tex.source || !tex.source[0]) return;
+  var liveCnv = tex.source[0].image;
+  if (!(liveCnv instanceof HTMLCanvasElement)) return;
+
   var srcImg = scene.textures.get('player_src').getSourceImage();
+  var ctx = liveCnv.getContext('2d');
   ctx.clearRect(0, 0, liveCnv.width, liveCnv.height);
   ctx.drawImage(srcImg, 0, 0);
 
@@ -192,9 +199,16 @@ function applyAppearance(scene){
     ctx.putImageData(imgd, 0, 0);
   }
 
-  // Tell Phaser the texture's source has changed — re-uploads to GPU.
-  var tex = scene.textures.get('player');
-  if (tex && typeof tex.refresh === 'function') tex.refresh();
+  // Force the WebGL/Canvas renderer to re-upload the texture from the canvas.
+  // Belt-and-braces approach: try refresh(), source.update(), and direct
+  // canvasToTexture — whichever is supported by the current Phaser build.
+  var src = tex.source[0];
+  if (typeof tex.refresh === 'function') tex.refresh();
+  if (src && typeof src.update === 'function') src.update();
+  var renderer = scene.sys && scene.sys.renderer;
+  if (renderer && typeof renderer.canvasToTexture === 'function' && src && src.glTexture){
+    renderer.canvasToTexture(liveCnv, src.glTexture, true);
+  }
 }
 
 function loadState(){
@@ -303,10 +317,10 @@ function checkAchievements(scene){
 // Position of major structures (tile coords)
 // All structures sit inside the fenced area (top fence at row 2, west fence at col 2),
 // leaving rows 0-1 and cols 0-1 as grass that's visible-but-unreachable beyond the fence.
-var FARMHOUSE = { c:3, r:3, w:5, h:6 };   // cols 3-7, rows 3-8
+var FARMHOUSE = { c:3, r:3, w:4, h:6 };   // cols 3-6, rows 3-8
 var NOTICEBOARD = { c:8, r:8 };
 var WELL = { c:9, r:9 };
-var STUDY_TREE = { c:18, r:11, w:3, h:3 }; // 3x3 footprint
+var STUDY_TREE = { c:20, r:11, w:3, h:3 }; // 3x3 footprint (moved 2 cols right to centre on grass patch)
 var CAVE = { c:36, r:0, w:3, h:3 };        // top-right, ACROSS the river/waterfall channel
 
 // Garden beds — M1 shifted east to avoid the new west fence
@@ -353,9 +367,11 @@ var BootScene = new Phaser.Class({
     this.load.image('ts_terrainEx', A+'TerrainExpanded32.png');
     this.load.image('ts_orchard',   A+'Orchard32.png');
     this.load.image('ts_plants',    A+'Plants.png');
+    this.load.image('ts_grass_at',  A+'Grass_AutoTile.png');
+    this.load.image('ts_earth',     A+'Earth.png');
+    this.load.image('ts_char_panel',A+'CharacterPanel.png');
 
     // Existing assets we still use
-    this.load.image('terrain',    A+'Terrain.png');       // bright-green grass (the old look)
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
@@ -390,7 +406,7 @@ var BootScene = new Phaser.Class({
       self.textures.remove(k);
       self.textures.addCanvas(k, canvas);
     }
-    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants'].forEach(keyOut);
+    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants','ts_char_panel'].forEach(keyOut);
 
     // Apply any saved character appearance to the player sprite before animations build
     applyAppearance(this);
@@ -511,14 +527,14 @@ var GardenScene = new Phaser.Class({
       for (var r=r1; r<=r2; r++) for (var c=c1; c<=c2; c++) p(c, r);
     }
 
-    // Centre ring (2 thick) around Study Tree at cols 18-20 rows 11-13
-    pathRect(16, 22,  9, 10);    // N strip
-    pathRect(16, 22, 14, 15);    // S strip
-    pathRect(16, 17, 11, 13);    // W side
-    pathRect(21, 22, 11, 13);    // E side
+    // Centre ring (2 thick) around Study Tree at cols 20-22 rows 11-13
+    pathRect(18, 24,  9, 10);    // N strip
+    pathRect(18, 24, 14, 15);    // S strip
+    pathRect(18, 19, 11, 13);    // W side
+    pathRect(23, 24, 11, 13);    // E side
 
     // Upper E-W corridor: south of farmhouse to centre ring
-    pathRect(6, 22,  9, 10);
+    pathRect(6, 24,  9, 10);
 
     // Lower E-W corridor: extends east toward cave river edge
     pathRect(6, 32, 14, 15);
@@ -529,8 +545,9 @@ var GardenScene = new Phaser.Class({
     // South vertical down to M1 bed (cols 4-7 rows 18-21)
     pathRect(6, 7, 16, 17);
 
-    // South vertical down to M4 bed (cols 13-16 rows 21-24)
-    pathRect(16, 17, 16, 20);
+    // M4 bed at cols 13-16 rows 21-24 — route south from the centre-ring west side,
+    // then bend west to meet the bed's north edge.
+    pathRect(13, 19, 19, 20);    // south of centre, going west toward M4 col 13
 
     // Upper-corridor north spur to M2 bed (cols 26-29 rows 4-7)
     pathRect(24, 25, 6, 8);
@@ -560,54 +577,95 @@ var GardenScene = new Phaser.Class({
     var TS = 32;
 
     var terrA5 = this.textures.get('ts_terrainA5').getSourceImage();
-    var terrOld = this.textures.get('terrain').getSourceImage();      // bright green grass
     var gardenbeds = this.textures.get('gardenbeds').getSourceImage(); // soil texture
+    var grassAT = this.textures.get('ts_grass_at').getSourceImage();   // 4×4 grass autotile
+    var earthImg = this.textures.get('ts_earth').getSourceImage();     // 2×1 earth variants
 
-    // Helper: draw a 32px tile from a sheet at (sc,sr) tile coords on TerrainA5
     function drawA5(sc, sr, dx, dy){
       ctx.drawImage(terrA5, sc*TS, sr*TS, TS, TS, dx, dy, TS, TS);
     }
-    // Old Terrain.png grass is 16x16 source, scaled up to 32x32 destination
-    function drawGrassOld(variantCol, dx, dy){
-      ctx.drawImage(terrOld, variantCol*16, 0, 16, 16, dx, dy, TS, TS);
-    }
-    // Garden_beds.png soil — 16x16 source, scaled to 32x32. 3 col x 2 row of interior soil.
     function drawSoil(sc, sr, dx, dy){
       ctx.drawImage(gardenbeds, sc*16, sr*16, 16, 16, dx, dy, TS, TS);
     }
+    // Earth tile: 2 variants horizontally
+    function drawEarth(dx, dy){
+      var h = ((dx*1597334677) ^ (dy*3812015801)) >>> 0;
+      var variant = h % 2;
+      ctx.drawImage(earthImg, variant*32, 0, 32, 32, dx, dy, TS, TS);
+    }
+    // Grass autotile: pick the right 32×32 cell from a 4×4 sheet (positions defined below)
+    var GRASS_TILES = {
+      nw:   [0, 0],   n:   [1, 0],   ne:  [2, 0],   uL:  [3, 0],
+      w:    [0, 1],   c0:  [1, 1],   e:   [2, 1],   uR:  [3, 1],
+      sw:   [0, 2],   s:   [1, 2],   se:  [2, 2],   dL:  [3, 2],
+      c1:   [0, 3],   c2:  [1, 3],   c3:  [2, 3],   dR:  [3, 3]
+    };
+    function drawGrassTile(name, dx, dy){
+      var p = GRASS_TILES[name];
+      ctx.drawImage(grassAT, p[0]*TS, p[1]*TS, TS, TS, dx, dy, TS, TS);
+    }
+    function isGrass(c, r){
+      // Off-map tiles count as grass so the world edge doesn't get hard-cut.
+      if (r<0 || r>=MAP_H || c<0 || c>=MAP_W) return true;
+      return TM[r][c] === T_GRASS;
+    }
+    function pickGrass(c, r){
+      var hN = !isGrass(c, r-1);
+      var hS = !isGrass(c, r+1);
+      var hW = !isGrass(c-1, r);
+      var hE = !isGrass(c+1, r);
+      // Outer corners take precedence (two orthogonal neighbours non-grass)
+      if (hN && hW) return 'nw';
+      if (hN && hE) return 'ne';
+      if (hS && hW) return 'sw';
+      if (hS && hE) return 'se';
+      // Edges
+      if (hN) return 'n';
+      if (hS) return 's';
+      if (hW) return 'w';
+      if (hE) return 'e';
+      // Inner corners — all 4 orthogonal are grass, but a diagonal is non-grass
+      var dNW = !isGrass(c-1, r-1);
+      var dNE = !isGrass(c+1, r-1);
+      var dSW = !isGrass(c-1, r+1);
+      var dSE = !isGrass(c+1, r+1);
+      if (dNW) return 'uL';
+      if (dNE) return 'uR';
+      if (dSW) return 'dL';
+      if (dSE) return 'dR';
+      // Pure interior — randomise across 4 variants for visual texture
+      var h = ((c*2654435761) ^ (r*2246822519)) >>> 0;
+      return ['c0','c1','c2','c3'][h % 4];
+    }
 
-    // ---- GRASS — bright-green old Terrain.png, 3 variants, deterministic per tile ----
-    for (var r=0;r<MAP_H;r++){
-      for (var c=0;c<MAP_W;c++){
-        if (TM[r][c] === T_GRASS){
-          var h = ((c*2654435761)^(r*2246822519))>>>0;
-          drawGrassOld(h % 3, c*TS, r*TS);
-        }
+    // ---- PATHS (earth) — flat earth tile, deterministic per-position variant ----
+    for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
+      if (TM[r][c] === T_PATH){
+        drawEarth(c*TS, r*TS);
       }
     }
 
-    // ---- GARDEN BED SOIL — old Garden_beds.png interior tiles ----
+    // ---- GARDEN BED SOIL ----
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
       if (TM[r][c] === T_DIRT){
-        var h = ((c*1597334677)^(r*3812015801))>>>0;
-        drawSoil(h % 3, h % 2, c*TS, r*TS);
+        var hh = ((c*1597334677)^(r*3812015801))>>>0;
+        drawSoil(hh % 3, hh % 2, c*TS, r*TS);
       }
     }
 
-    // ---- PATH tiles — auto-tile from TerrainA5 (cols 0-3, rows 1-3) ----
-    function isPath(c, r){
-      if (r<0||r>=MAP_H||c<0||c>=MAP_W) return false;
-      return TM[r][c] === T_PATH;
-    }
+    // ---- GRASS — autotile overlay on top of earth.
+    // Edge/corner grass tiles are partially transparent so the underlying earth
+    // shows through, creating the natural grass-encroaching-on-path look.
+    // For tiles that have a non-grass neighbour, draw earth FIRST so it shows.
     for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
-      if (TM[r][c] !== T_PATH) continue;
-      var n = !isPath(c, r-1);
-      var s = !isPath(c, r+1);
-      var e = !isPath(c+1, r);
-      var w = !isPath(c-1, r);
-      var sc = w ? 0 : (e ? 3 : 1);
-      var sr = n ? 1 : (s ? 3 : 2);
-      drawA5(sc, sr, c*TS, r*TS);
+      if (TM[r][c] !== T_GRASS) continue;
+      var pick = pickGrass(c, r);
+      var isInterior = (pick === 'c0' || pick === 'c1' || pick === 'c2' || pick === 'c3');
+      if (!isInterior){
+        // Draw earth underneath so the transparent edges of the grass tile reveal it
+        drawEarth(c*TS, r*TS);
+      }
+      drawGrassTile(pick, c*TS, r*TS);
     }
 
     // ---- WATER base colour (animated sprites layered on top) — darker for contrast with rock rim ----
@@ -651,6 +709,67 @@ var GardenScene = new Phaser.Class({
       if (TM[r][c] !== T_WATER) continue;
       var isInterior = isWater(c, r-1) && isWater(c, r+1) && isWater(c-1, r) && isWater(c+1, r);
       if (isInterior) drawEx(1, 9, c*TS, r*TS);
+    }
+
+    // ---- Concave (inner) corners — where water has a non-water DIAGONAL neighbour
+    // but all 4 orthogonal neighbours are water. Without these, the rim looks
+    // like a hard-cut square. We draw small procedural stone arcs in the corner.
+    function drawConcaveCorner(corner, cx, cy){
+      // Outer stone
+      ctx.fillStyle = '#48485a';
+      ctx.beginPath();
+      if (corner === 'NW'){
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + 10, cy);
+        ctx.quadraticCurveTo(cx + 3, cy + 3, cx, cy + 10);
+      } else if (corner === 'NE'){
+        ctx.moveTo(cx + TS, cy);
+        ctx.lineTo(cx + TS - 10, cy);
+        ctx.quadraticCurveTo(cx + TS - 3, cy + 3, cx + TS, cy + 10);
+      } else if (corner === 'SW'){
+        ctx.moveTo(cx, cy + TS);
+        ctx.lineTo(cx + 10, cy + TS);
+        ctx.quadraticCurveTo(cx + 3, cy + TS - 3, cx, cy + TS - 10);
+      } else { // SE
+        ctx.moveTo(cx + TS, cy + TS);
+        ctx.lineTo(cx + TS - 10, cy + TS);
+        ctx.quadraticCurveTo(cx + TS - 3, cy + TS - 3, cx + TS, cy + TS - 10);
+      }
+      ctx.closePath();
+      ctx.fill();
+      // Lighter highlight on the stone
+      ctx.fillStyle = '#7a7a8c';
+      ctx.beginPath();
+      if (corner === 'NW'){
+        ctx.moveTo(cx + 1, cy + 1);
+        ctx.lineTo(cx + 6, cy + 1);
+        ctx.quadraticCurveTo(cx + 2, cy + 2, cx + 1, cy + 6);
+      } else if (corner === 'NE'){
+        ctx.moveTo(cx + TS - 1, cy + 1);
+        ctx.lineTo(cx + TS - 6, cy + 1);
+        ctx.quadraticCurveTo(cx + TS - 2, cy + 2, cx + TS - 1, cy + 6);
+      } else if (corner === 'SW'){
+        ctx.moveTo(cx + 1, cy + TS - 1);
+        ctx.lineTo(cx + 6, cy + TS - 1);
+        ctx.quadraticCurveTo(cx + 2, cy + TS - 2, cx + 1, cy + TS - 6);
+      } else {
+        ctx.moveTo(cx + TS - 1, cy + TS - 1);
+        ctx.lineTo(cx + TS - 6, cy + TS - 1);
+        ctx.quadraticCurveTo(cx + TS - 2, cy + TS - 2, cx + TS - 1, cy + TS - 6);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    for (var r=0;r<MAP_H;r++) for (var c=0;c<MAP_W;c++){
+      if (TM[r][c] !== T_WATER) continue;
+      // Only check tiles where ALL 4 orthogonal neighbours are water (otherwise
+      // the edge tiles already handle the rendering).
+      var allOrth = isWater(c, r-1) && isWater(c, r+1) && isWater(c-1, r) && isWater(c+1, r);
+      if (!allOrth) continue;
+      if (!isWater(c-1, r-1)) drawConcaveCorner('NW', c*TS, r*TS);
+      if (!isWater(c+1, r-1)) drawConcaveCorner('NE', c*TS, r*TS);
+      if (!isWater(c-1, r+1)) drawConcaveCorner('SW', c*TS, r*TS);
+      if (!isWater(c+1, r+1)) drawConcaveCorner('SE', c*TS, r*TS);
     }
 
     // ---- Path edge shadow (small drop into grass) ----
@@ -747,6 +866,10 @@ var GardenScene = new Phaser.Class({
       return h;
     }
     function placeForestItem(c, r, salt){
+      // Never place forest items on water tiles — the waterfall/stream must
+      // extend cleanly to the world border without trees/boulders on top of it.
+      if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
+      if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL) return;
       var h = shrubHash(c, r, salt);
       // Only place ~70% of cells — gives breathing room between firs/mushrooms/boulders
       if ((h % 100) < 30) return;
@@ -802,22 +925,37 @@ var GardenScene = new Phaser.Class({
     var self = this;
     var TS = TILE;
 
-    // Helper to drop a slightly-darker shadow ellipse under a sprite
+    // Helper to drop an elliptical ground shadow (used for trees/decor)
     function shadow(wx, wy, w, h){
       var g = self.add.graphics().setDepth(wy - 1);
-      g.fillStyle(0x000000, 0.45);  // darker than the old 0.25
+      g.fillStyle(0x000000, 0.45);
       g.fillEllipse(wx, wy - 2, w, h);
+      return g;
+    }
+    // Square shadow for buildings — drawn slightly behind (north-east).
+    // Procedurally generated rectangle with soft outer fade.
+    function buildingShadow(bx, by, bw, bh, offsetX, offsetY){
+      var g = self.add.graphics().setDepth(by + bh - 1);
+      // Outer soft ring
+      g.fillStyle(0x000000, 0.18);
+      g.fillRect(bx + offsetX - 4, by + offsetY - 4, bw + 8, bh + 8);
+      // Inner darker rectangle
+      g.fillStyle(0x000000, 0.36);
+      g.fillRect(bx + offsetX, by + offsetY, bw, bh);
       return g;
     }
 
     // ---- FARMHOUSE (top-left) ----
-    // Source: Buildings32 cols 0-4 rows 0-5 = px(0,0,160,192). Was 128 wide which cut off
-    // the right edge with the chimney/birdhouse — corrected to 160.
+    // Source: Buildings32 cols 0-3 rows 0-5 = px(0,0,128,192). 4 tiles wide.
+    // (The 5th-column content at px 128-160 is a separate mailbox icon — not the
+    // farmhouse — so we don't include it; the previous 160-wide crop introduced a
+    // ghost 2nd mailbox above the roof.)
     var fhPxX = (FARMHOUSE.c) * TS;
     var fhPxY = (FARMHOUSE.r) * TS;
     var fhW = FARMHOUSE.w * TS, fhH = FARMHOUSE.h * TS;
-    shadow(fhPxX + fhW/2, fhPxY + fhH + 4, fhW*0.85, 14);
-    this._placeCropImage('ts_buildings', 0, 0, 160, 192,
+    // Square procedural shadow behind/right of the farmhouse (not in front)
+    buildingShadow(fhPxX, fhPxY, fhW, fhH, TS*0.45, -TS*0.15);
+    this._placeCropImage('ts_buildings', 0, 0, 128, 192,
       fhPxX + fhW/2, fhPxY + fhH, fhW, fhH, fhPxY + fhH);
 
     // ---- NOTICEBOARD (mailbox replacement next to farmhouse) ----
@@ -868,19 +1006,19 @@ var GardenScene = new Phaser.Class({
       return;
     }
 
-    // Apple-tree growth progression on Orchard32 (each variant is 64x96 px = 2x3 tiles):
-    //   stage 1: small sprout       (1, 2) — 32x64
-    //   stage 2: white blossom      (2, 0) — 64x96 (cols 2-3, rows 0-2)
-    //   stage 3: green leafy        (4, 0) — 64x96 (cols 4-5, rows 0-2)
-    //   stage 4: bigger green       (6, 0) — 64x96 (cols 6-7, rows 0-2)
-    //   stage 5: full red apple     (8, 0) — 64x96 (cols 8-9, rows 0-2)
+    // Apple-tree growth progression on Orchard32 — each variant is 96×96 (3 wide × 3 tall).
+    //   stage 1: small sprout      px(32,  64, 32, 64)
+    //   stage 2: white blossom     px(64,   0, 96, 96)
+    //   stage 3: green leafy       px(160,  0, 96, 96)
+    //   stage 4: bigger green      px(256,  0, 96, 96)
+    //   stage 5: red apple         px(352,  0, 96, 96)
     var VARIANTS = [
       null,
       { sx:32,  sy:64, sw:32, sh:64, scale:0.30 },
-      { sx:64,  sy:0,  sw:64, sh:96, scale:0.55 },
-      { sx:128, sy:0,  sw:64, sh:96, scale:0.75 },
-      { sx:192, sy:0,  sw:64, sh:96, scale:0.90 },
-      { sx:256, sy:0,  sw:64, sh:96, scale:1.00 }
+      { sx:64,  sy:0,  sw:96, sh:96, scale:0.55 },
+      { sx:160, sy:0,  sw:96, sh:96, scale:0.75 },
+      { sx:256, sy:0,  sw:96, sh:96, scale:0.90 },
+      { sx:352, sy:0,  sw:96, sh:96, scale:1.00 }
     ];
     var v = VARIANTS[stage];
     var w = this.studyTreeMaxW * v.scale;
@@ -1056,40 +1194,54 @@ var GardenScene = new Phaser.Class({
       }
     }
 
-    // ---- SUNFLOWERS — organised placement inside the farm + along the borders ----
-    // Source: Plants.png at (1, 13) px(32, 416). A 32x32 cell with a tall sunflower.
+    // ---- SUNFLOWERS — fully bloomed, organised positions ----
+    // Source: Plants.png at (2, 12) px(64, 384, 64, 64). A 2x2 sprite of two
+    // fully-bloomed sunflowers. We render at 1 tile wide so it's a cosy single
+    // sunflower per spot, taking the LEFT half of the 2-tile sprite for variety.
     var SUN_SPOTS = [
       // Inside the farm — flanking key landmarks
       [11, 9], [11, 15],
-      [22, 9], [22, 15],
+      [24, 9], [24, 15],
       [9, 12], [9, 13],
       [27, 10], [27, 14],
-      [14, 19], [18, 19],
+      [14, 19], [20, 19],
       // Inside the perimeter — a cosy line of sunflowers along the fence lines
       [4, 3], [10, 3], [16, 3], [22, 3], [28, 3], [31, 3],
       [3, 12], [3, 16], [3, 20]
     ];
-    SUN_SPOTS.forEach(function(pt){
+    SUN_SPOTS.forEach(function(pt, i){
       var c = pt[0], r = pt[1];
       if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
       if (TM[r][c] !== T_GRASS) return;
       var wx = c*TS + TS/2, wy = r*TS + TS;
+      // Small base shadow
       var g = self.add.graphics().setDepth(wy - 1);
-      g.fillStyle(0x000000, 0.30);
-      g.fillEllipse(wx, wy - 1, TS*0.45, 4);
-      self._placeCropImage('ts_plants', 32, 416, 32, 32, wx, wy, TS*0.95, TS*1.20, wy);
+      g.fillStyle(0x000000, 0.35);
+      g.fillEllipse(wx, wy - 1, TS*0.55, 5);
+      // Bloomed sunflower — take the LEFT tile of the 2-tile sprite for one flower head.
+      // The sprite is 32 wide × 64 tall (1 tile × 2 tiles) showing the full plant.
+      // Alternate which half we sample for variety.
+      var sx = (i % 2 === 0) ? 64 : 96;
+      self._placeCropImage('ts_plants', sx, 384, 32, 64, wx, wy, TS*1.0, TS*1.7, wy);
     });
     this.sunflowerSpots = SUN_SPOTS.slice();
 
-    // ---- LILY PADS on the pond ----
-    var LILY_SPOTS = [ [3, 24], [5, 23], [7, 25], [2, 26], [6, 24] ];
+    // ---- LILY PADS on the pond — full 32×32 tiles, multiple variants ----
+    // Source: Plants.png (19, 13) = simple pads; (20, 13) = pads with white lotus.
+    var LILY_SPOTS = [
+      { c:3, r:24, variant:0 }, { c:5, r:23, variant:1 }, { c:7, r:25, variant:0 },
+      { c:2, r:26, variant:1 }, { c:6, r:24, variant:0 }, { c:4, r:25, variant:1 },
+      { c:8, r:24, variant:0 }, { c:3, r:27, variant:0 }, { c:7, r:23, variant:1 }
+    ];
     LILY_SPOTS.forEach(function(pt){
-      var c = pt[0], r = pt[1];
+      var c = pt.c, r = pt.r;
       if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
       if (TM[r][c] !== T_WATER) return;
       var wx = c*TS + TS/2, wy = r*TS + TS/2;
-      // Plants.png at (20, 13) — small lily pad
-      self._placeCropImage('ts_plants', 20*32, 13*32, 32, 32, wx, wy, TS*0.7, TS*0.5, 2);
+      // Variant 0: simple green pads (19,13); Variant 1: with white flower (20,13)
+      var sx = (pt.variant === 0) ? 19*32 : 20*32;
+      // Full tile size, depth above water but below floating sprites
+      self._placeCropImage('ts_plants', sx, 13*32, 32, 32, wx, wy, TS, TS, 2);
     });
   },
 
@@ -1423,12 +1575,30 @@ var GardenScene = new Phaser.Class({
     }).setOrigin(0.5).setScrollFactor(0).setDepth(99999).setAlpha(0);
 
     // ---- Customise button in the bottom-right corner of the viewport ----
+    // Built from the CharacterPanel asset (px 0,0 — 96x32 — character portrait
+    // + brown banner). Sized up 1.5x for a chunky pixel-perfect button.
     var self = this;
-    this.customBtn = this.add.text(VIEW_W-10, VIEW_H-10, 'CUSTOMISE', {
-      fontFamily:'monospace', fontSize:'11px', color:'#1a2a14',
-      backgroundColor:'#9ad08a', padding:{x:10,y:6}
-    }).setOrigin(1,1).setScrollFactor(0).setDepth(99999).setInteractive({ useHandCursor:true });
+    var BTN_W = 144, BTN_H = 48;   // 96x32 scaled 1.5x
+
+    // Slice the panel region into its own texture if not already there
+    if (!this.textures.exists('custom_btn_tex')){
+      var src = this.textures.get('ts_char_panel').getSourceImage();
+      var cnv = document.createElement('canvas');
+      cnv.width = 96; cnv.height = 32;
+      cnv.getContext('2d').drawImage(src, 0, 0, 96, 32, 0, 0, 96, 32);
+      this.textures.addCanvas('custom_btn_tex', cnv);
+    }
+    this.customBtn = this.add.image(VIEW_W-10, VIEW_H-10, 'custom_btn_tex')
+      .setOrigin(1,1)
+      .setDisplaySize(BTN_W, BTN_H)
+      .setScrollFactor(0)
+      .setDepth(99999)
+      .setInteractive({ useHandCursor:true });
     this.customBtn.on('pointerdown', function(){ openModal('customise', self); });
+    // Subtle hover lift
+    this.customBtn.on('pointerover', function(){ self.customBtn.setScale(1.55); });
+    this.customBtn.on('pointerout',  function(){ self.customBtn.setScale(1.5); });
+    this.customBtn.setScale(1.5);
   },
 
   showToast: function(msg){
