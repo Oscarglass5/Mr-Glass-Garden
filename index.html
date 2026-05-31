@@ -7,11 +7,11 @@
 <script src="phaser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Almendra:wght@700&family=Almendra+SC&family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: #1a2810; overflow: hidden;
-    font-family: 'VT323', 'Courier New', monospace; font-size: 17px; }
+    font-family: 'VT323', 'Courier New', monospace; font-size: 20px; }
   #game-container { width: 100vw; height: 100vh; display: flex;
     align-items: center; justify-content: center; }
   canvas { image-rendering: pixelated; image-rendering: crisp-edges;
@@ -145,10 +145,148 @@
     background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
     padding:8px 12px; cursor:pointer; letter-spacing:1px; }
   .studybtn:hover { background:#b0d0a0; }
+
+  /* ---- Tab bar in Character modal ---- */
+  .tabbar { display:flex; gap:0; margin-bottom:14px; border-bottom:3px solid #6a4818; }
+  .tab { flex:1; background:#d4b878; border:2px solid #6a4818; border-bottom:none;
+    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:11px;
+    letter-spacing:1px; padding:11px 0; cursor:pointer; margin-bottom:-1px; }
+  .tab:hover { background:#e4c888; }
+  .tab.active { background:#f4e8c8; border-bottom:3px solid #f4e8c8; color:#6a3000; }
+  .tabpanel { padding-top:4px; }
+
+  /* ---- Study session prompt + takeaway ---- */
+  .sessionpanel { background:#f4e8c8; border:3px solid #6a4818;
+    box-shadow: inset 0 0 0 1px #d4b878, inset 0 0 0 2px #6a4818;
+    padding:14px; margin-top:10px; }
+  .sessionhead { display:flex; align-items:center; gap:12px; }
+  .sessionskill { font-family:'Press Start 2P', monospace; font-size:13px;
+    color:#3a2004; letter-spacing:1px; }
+  .sessionlen { font-size:14px; color:#6a4818; margin-top:4px; }
+  .sessiontxt { width:100%; padding:10px; font-family:inherit; font-size:17px;
+    color:#3a2004; background:#fff8e8; border:2px solid #c8a868;
+    resize:vertical; margin-top:6px; box-sizing:border-box; }
+  .sessiontxt:focus { outline:2px solid #c8901c; outline-offset:1px; }
+  .sessionrecall { background:#fff8e8; border:2px solid #c8a868;
+    padding:10px 12px; margin-top:10px; font-size:14px; }
+  .sessionrecall span { color:#7a5820; font-size:13px; }
+  .sessionrecall blockquote { margin:6px 0 0; padding-left:10px;
+    border-left:3px solid #c8a868; color:#3a2004; font-style:italic; }
+  .sessionactions { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+  .confirmbtn, .cancelbtn, .discardbtn {
+    font-family:'Press Start 2P', monospace; font-size:10px; letter-spacing:1px;
+    padding:10px 16px; cursor:pointer; border:2px solid; }
+  .confirmbtn { background:#9ac08a; border-color:#4a6028; color:#1a2a14; }
+  .confirmbtn:hover { background:#b0d0a0; }
+  .cancelbtn  { background:#d4b878; border-color:#6a4818; color:#3a2004; }
+  .cancelbtn:hover  { background:#e4c888; }
+  .discardbtn { background:#c08070; border-color:#7a3018; color:#fff5e8; }
+  .discardbtn:hover { background:#d09080; }
+
+  /* ---- Skill action buttons ---- */
+  .passivebtn, .activebtn { font-family:'Press Start 2P', monospace;
+    font-size:9px; letter-spacing:1px; padding:8px 12px; cursor:pointer;
+    border:2px solid; margin-right:6px; }
+  .passivebtn { background:#9ac08a; border-color:#4a6028; color:#1a2a14; }
+  .passivebtn:hover:not(:disabled) { background:#b0d0a0; }
+  .passivebtn:disabled { background:#a8a89c; border-color:#6a6a60; color:#4a4a40; cursor:not-allowed; }
+  .activebtn  { background:#d4b878; border-color:#6a4818; color:#3a2004; }
+  .activebtn:disabled { background:#a8a89c; border-color:#6a6a60; color:#4a4a40; cursor:not-allowed; }
+
+  /* ---- Journal ---- */
+  .journaltabs { display:flex; gap:0; margin-top:6px; border-bottom:3px solid #6a4818;
+    margin-bottom:14px; }
+  .jtab { flex:1; background:#d4b878; border:2px solid #6a4818; border-bottom:3px solid;
+    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:10px;
+    letter-spacing:1px; padding:8px 0; cursor:pointer; margin-bottom:-3px; }
+  .jtab:hover { background:#e4c888; }
+  .jtab.active { background:#f4e8c8; color:#6a3000; }
+  .journalentries { display:flex; flex-direction:column; gap:10px; }
+  .journalentry { background:#fff8e8; border:2px solid #c8a868; padding:11px 13px; }
+  .jhead { display:flex; justify-content:space-between; align-items:center;
+    border-bottom:1px dashed #c4a868; padding-bottom:6px; margin-bottom:8px; }
+  .jdate { font-size:13px; color:#7a5820; }
+  .jxp { font-family:'Press Start 2P', monospace; font-size:10px;
+    color:#4a6028; background:#e4f0d8; padding:3px 8px; border:1px solid #4a6028; }
+  .jrow { font-size:15px; color:#3a2004; margin-bottom:6px; line-height:1.45; }
+  .jrow b { color:#6a3000; font-family:'Press Start 2P', monospace; font-size:9px;
+    letter-spacing:1px; margin-right:4px; }
+  .jactions { margin-top:8px; text-align:right; }
+  .jdelbtn { font-family:'Press Start 2P', monospace; font-size:8px;
+    background:transparent; border:1px solid #a04830; color:#a04830;
+    padding:5px 9px; cursor:pointer; letter-spacing:1px; }
+  .jdelbtn:hover { background:#a04830; color:#fff5e8; }
+
+  /* ---- Splash screen ---- */
+  #splash {
+    position: fixed; inset: 0; z-index: 100000;
+    background: #6a4818 url('assets/SplashMountain.jpg') center / cover no-repeat;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: opacity 0.6s ease;
+  }
+  #splash.hidden { opacity: 0; pointer-events: none; }
+  /* Soft vignette so the title reads cleanly against the mountain */
+  #splash::after {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.0) 30%, rgba(0,0,0,0.45) 90%);
+    pointer-events: none;
+  }
+  .splash-card {
+    position: relative; z-index: 2;
+    background: rgba(244, 232, 200, 0.94);
+    border: 4px solid #6a4818;
+    box-shadow: inset 0 0 0 2px #d4b878, 0 8px 28px rgba(0,0,0,0.5);
+    padding: 42px 56px; text-align: center;
+    max-width: 90%; min-width: 360px;
+  }
+  .splash-title {
+    font-family: 'Almendra', 'Almendra SC', 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 62px; color: #3a2004; letter-spacing: 2px;
+    line-height: 1.0; text-shadow: 3px 3px 0 #c8a868, 4px 4px 0 rgba(0,0,0,0.18);
+    margin-bottom: 10px;
+  }
+  .splash-subtitle {
+    font-family: 'VT323', monospace; font-size: 22px;
+    color: #6a4818; letter-spacing: 2px; margin-bottom: 28px;
+  }
+  .splash-button {
+    font-family: 'Almendra SC', serif; font-size: 22px; letter-spacing: 3px;
+    background: #9ac08a; border: 3px solid #4a6028; color: #1a2a14;
+    padding: 14px 36px; cursor: pointer;
+    box-shadow: 0 4px 0 #4a6028, inset 0 0 0 1px #c0d8a8;
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .splash-button:hover:not(:disabled) {
+    background: #b0d0a0; transform: translateY(-1px);
+    box-shadow: 0 5px 0 #4a6028, inset 0 0 0 1px #d0e0b8;
+  }
+  .splash-button:active:not(:disabled) {
+    transform: translateY(2px); box-shadow: 0 2px 0 #4a6028, inset 0 0 0 1px #c0d8a8;
+  }
+  .splash-button:disabled {
+    background: #a8a89c; border-color: #6a6a60; color: #4a4a40;
+    cursor: not-allowed; box-shadow: 0 4px 0 #6a6a60;
+  }
+  .splash-foot {
+    margin-top: 22px; font-family: 'VT323', monospace; font-size: 16px;
+    color: #6a4818; opacity: 0.78;
+  }
 </style>
 </head>
 <body>
   <div id="game-container"></div>
+
+  <!-- Splash screen — visible on every page load, dismisses on click -->
+  <div id="splash">
+    <div class="splash-card">
+      <div class="splash-title">Mr Glass' Garden</div>
+      <div class="splash-subtitle">Year 11 Biology</div>
+      <button id="splash-enter" class="splash-button" disabled>LOADING...</button>
+      <div class="splash-foot">WASD to move &middot; E to interact</div>
+    </div>
+  </div>
 
   <div id="modal-overlay">
     <div id="modal">
@@ -160,6 +298,36 @@
     </div>
   </div>
 
+  <script>
+    // Signal hooked by game.js BootScene once all assets have loaded.
+    window.__gameReady = false;
+    window.markGameReady = function(){
+      window.__gameReady = true;
+      var btn = document.getElementById('splash-enter');
+      if (btn){
+        btn.disabled = false;
+        btn.textContent = 'ENTER THE GARDEN';
+      }
+    };
+    document.addEventListener('DOMContentLoaded', function(){
+      var btn = document.getElementById('splash-enter');
+      var splash = document.getElementById('splash');
+      if (!btn || !splash) return;
+      btn.addEventListener('click', function(){
+        if (!window.__gameReady) return;
+        splash.classList.add('hidden');
+        // After fade-out, remove from DOM so it can't block interactions
+        setTimeout(function(){ splash.style.display = 'none'; }, 700);
+        // First user interaction has occurred — unlock Phaser's audio context
+        if (window.__phaserGame && window.__phaserGame.sound &&
+            window.__phaserGame.sound.context && window.__phaserGame.sound.context.state === 'suspended'){
+          window.__phaserGame.sound.context.resume();
+        }
+        // Notify game so it can begin systems that require audio
+        if (window.__onSplashDismissed) window.__onSplashDismissed();
+      });
+    });
+  </script>
   <script src="config.js"></script>
   <script src="ui.js"></script>
   <script src="game.js"></script>

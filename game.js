@@ -28,16 +28,20 @@ function defaultState(){
   });
   var pr = {}; CONFIG_PRACTICALS.forEach(function(_,i){ pr['p'+i] = false; });
   var at = {}; (CONFIG_ASSESSMENTS||[]).forEach(function(a){ at[a.key] = false; });
-  // Skills: each starts at level 0 with 0 XP
+  // Skills: each tracks total XP earned. Level computed from totalXP.
   var skills = {};
   if (typeof CONFIG_SKILLS !== 'undefined'){
-    Object.keys(CONFIG_SKILLS).forEach(function(k){ skills[k] = { xp:0, level:0 }; });
+    Object.keys(CONFIG_SKILLS).forEach(function(k){ skills[k] = { totalXP: 0 }; });
   }
   return {
     dp:dp, qz:qz, pr:pr, at:at,
     mailRead:[], achievements:[],
     appearance: { hair:null, skin:null, clothes:null, eyes:null },
-    skills: skills
+    skills: skills,
+    // Passive-study session in progress (null = none). Persists across reloads.
+    session: null,    // { skill, study, startedAt, duration }
+    // Journal of completed sessions. Each entry: { id, skill, study, takeaway, xp, timestamp }
+    journal: []
   };
 }
 
@@ -52,10 +56,17 @@ function defaultState(){
 
 var SKILL_MAX_LEVEL = 10;
 
+// Passive session length. Teacher-tunable — set to 60_000 (1 min) for testing.
+var SESSION_DURATION_MS = 15 * 60 * 1000;   // 15 minutes
+
+// XP awarded per completed passive session.
+var SESSION_XP_REWARD = 30;
+
 var CONFIG_SKILLS = {
   fishing: {
     name: 'Fishing',
     blurb: 'Cast a line in the pond. Each fish is a flashcard.',
+    activityLabel: 'Fishing at the pond',
     unlockHint: null,
     color: '#4878a8',
     letter: 'F'
@@ -63,6 +74,7 @@ var CONFIG_SKILLS = {
   botany: {
     name: 'Botany',
     blurb: 'Identify plant structures and explain their function.',
+    activityLabel: 'Tending the garden beds',
     unlockHint: null,
     color: '#4a8a48',
     letter: 'B'
@@ -70,6 +82,7 @@ var CONFIG_SKILLS = {
   cultivation: {
     name: 'Cultivation',
     blurb: 'Build concept maps. Place new decorations around the farm.',
+    activityLabel: 'Chopping wood',
     unlockHint: 'Unlocks at Module 2 fully confident',
     color: '#c8901c',
     letter: 'C'
@@ -77,6 +90,7 @@ var CONFIG_SKILLS = {
   spelunking: {
     name: 'Spelunking',
     blurb: 'Investigate cave specimens with multi-step questions.',
+    activityLabel: 'Exploring the cave',
     unlockHint: 'Unlocks at 75% confident dot points overall',
     color: '#7a4818',
     letter: 'S'
@@ -88,24 +102,44 @@ function xpForNextLevel(level){
   if (level >= SKILL_MAX_LEVEL) return Infinity;
   return 100 + 50 * level;
 }
+// Compute current level from a skill's total XP.
+function computeLevel(totalXP){
+  var lvl = 0, remaining = totalXP || 0;
+  while (lvl < SKILL_MAX_LEVEL){
+    var cost = xpForNextLevel(lvl);
+    if (remaining < cost) break;
+    remaining -= cost;
+    lvl++;
+  }
+  return lvl;
+}
+// Break a total-XP value into {level, xpIntoLevel, nextLevelCost}.
+function progressFor(totalXP){
+  var lvl = 0, remaining = totalXP || 0;
+  while (lvl < SKILL_MAX_LEVEL){
+    var cost = xpForNextLevel(lvl);
+    if (remaining < cost) return { level: lvl, xp: remaining, next: cost };
+    remaining -= cost;
+    lvl++;
+  }
+  return { level: SKILL_MAX_LEVEL, xp: 0, next: 0 };
+}
 
-// Add XP to a skill; may cause multiple level-ups in one call.
+// Add (positive) or remove (negative) XP. Levels recompute automatically.
 function addSkillXP(skillKey, amount, scene){
   if (!ST || !ST.skills || !ST.skills[skillKey]) return;
   if (!CONFIG_SKILLS[skillKey]) return;
   var s = ST.skills[skillKey];
-  if (s.level >= SKILL_MAX_LEVEL) return;
-  s.xp += amount;
-  var leveledUp = false;
-  while (s.level < SKILL_MAX_LEVEL && s.xp >= xpForNextLevel(s.level)){
-    s.xp -= xpForNextLevel(s.level);
-    s.level += 1;
-    leveledUp = true;
-  }
-  if (s.level >= SKILL_MAX_LEVEL) s.xp = 0;  // Clamp at max
+  var oldLevel = computeLevel(s.totalXP || 0);
+  s.totalXP = Math.max(0, (s.totalXP || 0) + amount);
+  var newLevel = computeLevel(s.totalXP);
   saveState();
-  if (leveledUp && scene && scene.showToast){
-    scene.showToast(CONFIG_SKILLS[skillKey].name + ' is now Level ' + s.level + '!');
+  if (scene && scene.showToast){
+    if (newLevel > oldLevel){
+      scene.showToast(CONFIG_SKILLS[skillKey].name + ' is now Level ' + newLevel + '!');
+    } else if (newLevel < oldLevel){
+      scene.showToast(CONFIG_SKILLS[skillKey].name + ' dropped to Level ' + newLevel + '.');
+    }
   }
 }
 
@@ -115,6 +149,65 @@ function skillUnlocked(skillKey){
   if (skillKey === 'spelunking')  return overallConfidentPct() >= 0.75;
   return true;
 }
+
+// ---- Session lifecycle ----
+function sessionStart(skillKey, studyText){
+  if (!ST) return false;
+  if (ST.session) return false;   // one at a time
+  ST.session = {
+    skill: skillKey,
+    study: studyText,
+    startedAt: Date.now(),
+    duration: SESSION_DURATION_MS
+  };
+  saveState();
+  return true;
+}
+function sessionRemainingMs(){
+  if (!ST || !ST.session) return 0;
+  var elapsed = Date.now() - ST.session.startedAt;
+  return Math.max(0, ST.session.duration - elapsed);
+}
+function sessionExpired(){
+  return ST && ST.session && sessionRemainingMs() === 0;
+}
+function sessionCancel(){
+  // Discard session, no XP, no journal entry.
+  if (!ST) return;
+  ST.session = null;
+  saveState();
+}
+function sessionComplete(takeawayText){
+  // Finalise: add journal entry, grant XP, clear session.
+  if (!ST || !ST.session) return null;
+  var s = ST.session;
+  var entry = {
+    id: 'j_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+    skill: s.skill,
+    study: s.study,
+    takeaway: takeawayText,
+    xp: SESSION_XP_REWARD,
+    timestamp: Date.now()
+  };
+  if (!Array.isArray(ST.journal)) ST.journal = [];
+  ST.journal.unshift(entry);
+  ST.session = null;
+  saveState();
+  return entry;
+}
+function journalRemoveEntry(entryId){
+  if (!ST || !Array.isArray(ST.journal)) return;
+  var idx = -1;
+  for (var i=0; i<ST.journal.length; i++){
+    if (ST.journal[i].id === entryId){ idx = i; break; }
+  }
+  if (idx === -1) return;
+  var entry = ST.journal[idx];
+  ST.journal.splice(idx, 1);
+  // Refund/revoke the XP that this entry granted
+  addSkillXP(entry.skill, -entry.xp, null);  // saveState happens inside
+}
+
 
 
 // Picked to feel cozy and natural rather than cartoon-bright.
@@ -222,46 +315,63 @@ function classifyPixel(r, g, b){
 // animation system's WebGL texture refs). Instead, we replace the texture's
 // source with a canvas ONCE on first call, then repaint that same canvas on
 // subsequent calls and tell Phaser the source has changed via refresh().
+// Recolour the player sprite based on user's chosen palette hexes.
+// Uses Phaser's CanvasTexture API so refresh() actually re-uploads to GPU.
+// (addSpriteSheet creates a regular Texture whose refresh() is a no-op for
+//  canvas updates — the bug behind earlier failed attempts.)
 function applyAppearance(scene){
   if (!ST || !ST.appearance) return;
 
-  // First call: stash the originals and switch 'player' to a canvas-backed texture.
+  // FIRST CALL: stash original, replace 'player' with a CanvasTexture.
   if (!scene.textures.exists('player_src')){
-    var orig = scene.textures.get('player').getSourceImage();
-    if (!orig || !orig.width) return;
+    var origTex = scene.textures.get('player');
+    if (!origTex) return;
+    var origImg = origTex.getSourceImage();
+    if (!origImg || !origImg.width) return;
+    var W = origImg.width, H = origImg.height;
 
-    // Stash a copy of the untouched original under 'player_src'
+    // Stash a copy of the untouched original as a normal texture for resets
     var srcCnv = document.createElement('canvas');
-    srcCnv.width = orig.width; srcCnv.height = orig.height;
-    srcCnv.getContext('2d').drawImage(orig, 0, 0);
+    srcCnv.width = W; srcCnv.height = H;
+    srcCnv.getContext('2d').drawImage(origImg, 0, 0);
     scene.textures.addCanvas('player_src', srcCnv);
 
-    // Replace the 'player' texture (one-time) with a canvas we'll repaint.
-    // Using addSpriteSheet so the existing animations (which reference frame
-    // indices on 'player') continue to work.
-    var liveCnv0 = document.createElement('canvas');
-    liveCnv0.width = orig.width; liveCnv0.height = orig.height;
-    liveCnv0.getContext('2d').drawImage(orig, 0, 0);
+    // Replace 'player' with a CanvasTexture (this one has a real refresh())
     scene.textures.remove('player');
-    scene.textures.addSpriteSheet('player', liveCnv0, { frameWidth:80, frameHeight:80 });
+    var canvasTex = scene.textures.createCanvas('player', W, H);
+    canvasTex.getContext().drawImage(origImg, 0, 0);
+    canvasTex.refresh();
+
+    // Re-add the spritesheet frames so animations referencing numeric frames
+    // (0..47) keep working after the texture swap.
+    try {
+      Phaser.Textures.Parsers.SpriteSheet(canvasTex, 0, 0, 0, W, H,
+        { frameWidth: 80, frameHeight: 80 });
+    } catch (e) {
+      // Fallback for older Phaser builds — slice the frames manually.
+      var cols = Math.floor(W / 80);
+      var rows = Math.floor(H / 80);
+      var idx = 0;
+      for (var ry = 0; ry < rows; ry++){
+        for (var cx = 0; cx < cols; cx++){
+          canvasTex.add(idx, 0, cx*80, ry*80, 80, 80);
+          idx++;
+        }
+      }
+    }
   }
 
-  // Look up the live canvas FROM the texture source rather than a scene attribute.
-  // (Different scenes share the global texture manager, so storing the canvas on
-  // one scene's `this` doesn't help another scene that calls this function.)
+  // REPAINT: pull original pixels, recolor, push to the live canvas.
   var tex = scene.textures.get('player');
-  if (!tex || !tex.source || !tex.source[0]) return;
-  var liveCnv = tex.source[0].image;
-  if (!(liveCnv instanceof HTMLCanvasElement)) return;
-
+  if (!tex || typeof tex.getContext !== 'function') return;
+  var ctx = tex.getContext();
   var srcImg = scene.textures.get('player_src').getSourceImage();
-  var ctx = liveCnv.getContext('2d');
-  ctx.clearRect(0, 0, liveCnv.width, liveCnv.height);
+  ctx.clearRect(0, 0, tex.width, tex.height);
   ctx.drawImage(srcImg, 0, 0);
 
   var ap = ST.appearance;
   if (ap.hair || ap.skin || ap.clothes){
-    var imgd = ctx.getImageData(0, 0, liveCnv.width, liveCnv.height);
+    var imgd = ctx.getImageData(0, 0, tex.width, tex.height);
     var d = imgd.data;
     var targets = {
       hair:    ap.hair    ? rgbToHsl(hexToRgb(ap.hair).r,    hexToRgb(ap.hair).g,    hexToRgb(ap.hair).b)    : null,
@@ -272,23 +382,14 @@ function applyAppearance(scene){
       if (d[i+3] === 0) continue;
       var part = classifyPixel(d[i], d[i+1], d[i+2]);
       if (!part || !targets[part]) continue;
-      var orig2 = rgbToHsl(d[i], d[i+1], d[i+2]);
-      var out = hslToRgb(targets[part][0], targets[part][1], orig2[2]);
+      var origHsl = rgbToHsl(d[i], d[i+1], d[i+2]);
+      var out = hslToRgb(targets[part][0], targets[part][1], origHsl[2]);
       d[i] = out[0]; d[i+1] = out[1]; d[i+2] = out[2];
     }
     ctx.putImageData(imgd, 0, 0);
   }
-
-  // Force the WebGL/Canvas renderer to re-upload the texture from the canvas.
-  // Belt-and-braces approach: try refresh(), source.update(), and direct
-  // canvasToTexture — whichever is supported by the current Phaser build.
-  var src = tex.source[0];
-  if (typeof tex.refresh === 'function') tex.refresh();
-  if (src && typeof src.update === 'function') src.update();
-  var renderer = scene.sys && scene.sys.renderer;
-  if (renderer && typeof renderer.canvasToTexture === 'function' && src && src.glTexture){
-    renderer.canvasToTexture(liveCnv, src.glTexture, true);
-  }
+  // CanvasTexture.refresh() — properly re-uploads to GPU.
+  tex.refresh();
 }
 
 function loadState(){
@@ -311,11 +412,22 @@ function loadState(){
       if (s.skills) {
         Object.keys(s.skills).forEach(function(k){
           if (ST.skills[k] && s.skills[k]){
-            if (typeof s.skills[k].xp === 'number')    ST.skills[k].xp    = s.skills[k].xp;
-            if (typeof s.skills[k].level === 'number') ST.skills[k].level = s.skills[k].level;
+            // Migrate old {level, xp} -> new {totalXP}
+            if (typeof s.skills[k].totalXP === 'number'){
+              ST.skills[k].totalXP = s.skills[k].totalXP;
+            } else if (typeof s.skills[k].level === 'number' || typeof s.skills[k].xp === 'number'){
+              var oldLevel = s.skills[k].level || 0;
+              var oldXP    = s.skills[k].xp    || 0;
+              var total = 0;
+              for (var l=0; l<oldLevel; l++) total += xpForNextLevel(l);
+              total += oldXP;
+              ST.skills[k].totalXP = total;
+            }
           }
         });
       }
+      if (s.session !== undefined) ST.session = s.session;
+      if (Array.isArray(s.journal)) ST.journal = s.journal;
     }
   } catch(e){}
 }
@@ -459,6 +571,10 @@ var BootScene = new Phaser.Class({
     this.load.image('ts_earth',     A+'Earth.png');
     this.load.image('ts_char_panel',A+'CharacterPanel.png');
 
+    // Footstep sounds — two variants, alternated for natural cadence
+    this.load.audio('step1', A+'Step_dirt_1.ogg');
+    this.load.audio('step2', A+'Step_dirt_2.ogg');
+
     // Existing assets we still use
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
@@ -501,6 +617,11 @@ var BootScene = new Phaser.Class({
 
     buildAnimations(this);
     this.scene.start('Garden');
+
+    // Signal the splash overlay that everything is loaded — enables ENTER button.
+    if (typeof window !== 'undefined' && typeof window.markGameReady === 'function'){
+      window.markGameReady();
+    }
   }
 });
 
@@ -589,12 +710,9 @@ var GardenScene = new Phaser.Class({
     for (var r=0;r<MAP_H;r++){ TM.push([]); for (var c=0;c<MAP_W;c++) TM[r].push(T_GRASS); }
 
     // ---- River + waterfall + pond ----
-    // Waterfall: cols 33-35 rows 0-2 (water cascading from above-map)
-    for (var r=0; r<=2; r++){
-      for (var c=33; c<=35; c++) TM[r][c] = T_WATERFALL;
-    }
-    // Vertical river: cols 33-35 rows 3-26 (carries on south from waterfall)
-    for (var r=3; r<=26; r++){
+    // Vertical river: cols 33-35 from the very top of the world (row 0) down to row 26.
+    // No waterfall cave entrance — the river simply continues off-screen to the north.
+    for (var r=0; r<=26; r++){
       for (var c=33; c<=35; c++) TM[r][c] = T_WATER;
     }
     // Horizontal river across the bottom: cols 0-39 rows 27-29
@@ -873,17 +991,7 @@ var GardenScene = new Phaser.Class({
     this.add.image(0,0,key).setOrigin(0,0).setDepth(0);
 
     this.waterTiles = [];   // legacy reference; no animated tiles in this build
-    // ---- Waterfall band ----
-    for (var rr=0; rr<=2; rr++){
-      for (var ci=0; ci<3; ci++){
-        var sx = (5+ci)*TS, sy;
-        if (rr===0) sy = 1*TS;
-        else if (rr===1) sy = 3*TS;
-        else sy = 6*TS;
-        this._placeCropImage('ts_terrainA5', sx, sy, TS, TS,
-          (33+ci)*TS + TS/2, rr*TS + TS, TS, TS, 1);
-      }
-    }
+    // (No waterfall band — the river is open at the world border.)
   },
 
   // ============================================================
@@ -1036,14 +1144,14 @@ var GardenScene = new Phaser.Class({
 
     // ---- FARMHOUSE (top-left) ----
     // Source: Buildings32 cols 0-3 rows 0-5 = px(0,0,128,192). 4 tiles wide.
-    // (The 5th-column content at px 128-160 is a separate mailbox icon — not the
-    // farmhouse — so we don't include it; the previous 160-wide crop introduced a
-    // ghost 2nd mailbox above the roof.)
     var fhPxX = (FARMHOUSE.c) * TS;
     var fhPxY = (FARMHOUSE.r) * TS;
     var fhW = FARMHOUSE.w * TS, fhH = FARMHOUSE.h * TS;
-    // Square procedural shadow behind/right of the farmhouse (not in front)
-    buildingShadow(fhPxX, fhPxY, fhW, fhH, TS*0.45, -TS*0.15);
+    // Procedural shadow that follows the sun. Updated each frame in updateSunShadow().
+    // Sun rises in the east, sets in the west — so shadow points opposite.
+    this._farmhouseShadowMeta = { x: fhPxX, y: fhPxY, w: fhW, h: fhH };
+    this._farmhouseShadow = self.add.graphics().setDepth(fhPxY + fhH - 1);
+    this.refreshSunShadow();
     this._placeCropImage('ts_buildings', 0, 0, 128, 192,
       fhPxX + fhW/2, fhPxY + fhH, fhW, fhH, fhPxY + fhH);
 
@@ -1079,6 +1187,45 @@ var GardenScene = new Phaser.Class({
     // Source: TerrainExpanded cols 10-12 rows 5-7 -> px(320,160,96,96)
     this._placeCropImage('ts_terrainEx', 320, 160, 96, 96,
       cvX + cvW/2, cvY + cvH, cvW, cvH, cvY + cvH);
+  },
+
+  refreshSunShadow: function(){
+    var meta = this._farmhouseShadowMeta;
+    var g = this._farmhouseShadow;
+    if (!meta || !g) return;
+    // Map current real-time to a sun angle.
+    // 6am-6pm = visible day; 12pm = sun directly overhead (shadow shortest, south).
+    // Use a 24h cycle but only the daytime portion is visible; outside daytime we
+    // draw a small twilight shadow.
+    var now = new Date();
+    var hour = now.getHours() + now.getMinutes()/60;   // 0..24
+    var dayPhase;     // 0 = sunrise (east), 0.5 = noon, 1 = sunset (west)
+    var visible;
+    if (hour < 6 || hour >= 18){
+      // Night — keep a faint shadow due south
+      dayPhase = 0.5;
+      visible = 0.18;
+    } else {
+      dayPhase = (hour - 6) / 12;   // 6am→0, noon→0.5, 6pm→1
+      visible = 1.0;
+    }
+    // Sun azimuth angle in radians: at sunrise sun is east, so shadow is west.
+    // dayPhase 0 → shadow angle = west (PI), 0.5 → south (PI/2), 1 → east (0)
+    var shadowAngle = Math.PI - dayPhase * Math.PI;
+    // Sun elevation: lowest at sunrise/sunset, highest at noon.
+    // Affects shadow LENGTH — long at edges of day, short at noon.
+    var sunElevation = Math.sin(dayPhase * Math.PI);  // 0..1
+    var shadowLength = (1.2 - sunElevation * 0.7);    // 0.5 at noon, 1.2 at dawn/dusk
+    var offsetMag = meta.w * 0.55 * shadowLength;
+    var dx = Math.cos(shadowAngle) * offsetMag;
+    var dy = Math.sin(shadowAngle) * offsetMag * 0.35; // squash vertically (ground)
+
+    g.clear();
+    var alpha = 0.32 * visible;
+    g.fillStyle(0x000000, alpha * 0.6);
+    g.fillRect(meta.x + dx - 4, meta.y + dy + meta.h*0.4, meta.w + 8, meta.h*0.55);
+    g.fillStyle(0x000000, alpha);
+    g.fillRect(meta.x + dx, meta.y + dy + meta.h*0.4, meta.w, meta.h*0.55);
   },
 
   refreshStudyTree: function(){
@@ -1161,9 +1308,9 @@ var GardenScene = new Phaser.Class({
     var cropPos = CROP_TILES[b.m][stage-1];
     var sx = cropPos[0] * 32, sy = cropPos[1] * 32;
 
-    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Each plant is smaller now.
+    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Tighter spacing.
     var cols = 4, rows = 4;
-    var marginX = 10, marginY = 10;
+    var marginX = 4, marginY = 4;
     var usableW = bed.bw - marginX*2;
     var usableH = bed.bh - marginY*2;
     var stepX = usableW / (cols - 1);
@@ -1493,7 +1640,7 @@ var GardenScene = new Phaser.Class({
     }
   },
 
-  updatePlayer: function(){
+  updatePlayer: function(delta){
     var p = this.player, spd = 150;
     var vx=0, vy=0;
     var k=this.keys, cur=this.cursors;
@@ -1512,6 +1659,26 @@ var GardenScene = new Phaser.Class({
     var anim = (moving?'walk-':'idle-')+face;
     if (p.anims.currentAnim===null || p.anims.currentAnim.key!==anim) p.play(anim, true);
     p.setDepth(p.y);
+
+    // ---- Footstep playback ----
+    // Walk cycle = 6 frames at 9fps = 666ms. Each cycle has two foot-contacts,
+    // so a step every ~333ms feels right. Alternate the two ogg samples.
+    if (!this._stepTimer) this._stepTimer = 0;
+    if (moving){
+      this._stepTimer -= (delta || 16);
+      if (this._stepTimer <= 0){
+        this._stepTimer = 330;
+        if (this.sound && this.sound.locked === false){
+          var key = ((this._stepIdx = (this._stepIdx || 0) + 1) % 2 === 0) ? 'step1' : 'step2';
+          // Volume slightly randomised for naturalness
+          var vol = 0.35 + Math.random() * 0.1;
+          try { this.sound.play(key, { volume: vol }); } catch(e) {}
+        }
+      }
+    } else {
+      // Reset so the FIRST step after a pause lands quickly, not after a 330ms delay
+      this._stepTimer = 80;
+    }
   },
 
   // ============================================================
@@ -1643,33 +1810,29 @@ var GardenScene = new Phaser.Class({
   //  HUD
   // ============================================================
   buildHUD: function(){
-    this.hint = this.add.text(VIEW_W/2, VIEW_H-30, '', {
-      fontFamily:'monospace', fontSize:'13px', color:'#f0d060',
-      backgroundColor:'#0a0804cc', padding:{x:10,y:5}
+    this.hint = this.add.text(VIEW_W/2, VIEW_H-40, '', {
+      fontFamily:'monospace', fontSize:'17px', color:'#f0d060',
+      backgroundColor:'#0a0804cc', padding:{x:14,y:8}
     }).setOrigin(0.5).setScrollFactor(0).setDepth(99999).setVisible(false);
 
     this.badge = this.add.text(10, 10, CONFIG_SEASON_BADGE, {
-      fontFamily:'monospace', fontSize:'10px', color:'#f0d060',
-      backgroundColor:'#0a0804cc', padding:{x:6,y:3}
+      fontFamily:'monospace', fontSize:'14px', color:'#f0d060',
+      backgroundColor:'#0a0804cc', padding:{x:10,y:6}
     }).setScrollFactor(0).setDepth(99999);
 
     this.controls = this.add.text(VIEW_W-10, 10, 'WASD move \u00b7 E interact', {
-      fontFamily:'monospace', fontSize:'10px', color:'#80c040',
-      backgroundColor:'#0a0804cc', padding:{x:6,y:3}
+      fontFamily:'monospace', fontSize:'14px', color:'#80c040',
+      backgroundColor:'#0a0804cc', padding:{x:10,y:6}
     }).setOrigin(1,0).setScrollFactor(0).setDepth(99999);
 
-    this.toastTxt = this.add.text(VIEW_W/2, 50, '', {
-      fontFamily:'monospace', fontSize:'12px', color:'#80c040',
-      backgroundColor:'#0a0804ee', padding:{x:10,y:5}
+    this.toastTxt = this.add.text(VIEW_W/2, 60, '', {
+      fontFamily:'monospace', fontSize:'16px', color:'#80c040',
+      backgroundColor:'#0a0804ee', padding:{x:14,y:8}
     }).setOrigin(0.5).setScrollFactor(0).setDepth(99999).setAlpha(0);
 
     // ---- Customise button in the bottom-right corner of the viewport ----
-    // Built from the CharacterPanel asset (px 0,0 — 96x32 — character portrait
-    // + brown banner). Sized up 1.5x for a chunky pixel-perfect button.
     var self = this;
-    var BTN_W = 144, BTN_H = 48;   // 96x32 scaled 1.5x
-
-    // Slice the panel region into its own texture if not already there
+    var BTN_W = 144, BTN_H = 48;
     if (!this.textures.exists('custom_btn_tex')){
       var src = this.textures.get('ts_char_panel').getSourceImage();
       var cnv = document.createElement('canvas');
@@ -1684,24 +1847,69 @@ var GardenScene = new Phaser.Class({
       .setDepth(99999)
       .setInteractive({ useHandCursor:true });
     this.customBtn.on('pointerdown', function(){ openModal('customise', self); });
-    // Subtle hover lift
     this.customBtn.on('pointerover', function(){ self.customBtn.setScale(1.55); });
     this.customBtn.on('pointerout',  function(){ self.customBtn.setScale(1.5); });
     this.customBtn.setScale(1.5);
 
-    // ---- Skills button — placed to the LEFT of Customise so they sit together ----
-    this.skillsBtn = this.add.text(VIEW_W - 10 - 144 - 8, VIEW_H - 10, 'SKILLS', {
-      fontFamily:'monospace', fontSize:'12px', color:'#f0d060',
-      backgroundColor:'#5a3818', padding:{x:14, y:12}
-    }).setOrigin(1, 1).setScrollFactor(0).setDepth(99999)
+    // ---- Session timer bar (top of screen, only visible during active sessions) ----
+    var BAR_H = 38;
+    this.sessionBarBg = this.add.rectangle(0, 0, VIEW_W, BAR_H, 0x0a0804, 0.92)
+      .setOrigin(0,0).setScrollFactor(0).setDepth(99998).setStrokeStyle(2, 0xc8a860).setVisible(false);
+    this.sessionBarFill = this.add.rectangle(0, 0, 0, BAR_H, 0x4a8a48, 0.55)
+      .setOrigin(0,0).setScrollFactor(0).setDepth(99998).setVisible(false);
+    this.sessionBarLabel = this.add.text(14, 8, '', {
+      fontFamily:'monospace', fontSize:'14px', color:'#f0d060'
+    }).setScrollFactor(0).setDepth(99999).setVisible(false);
+    this.sessionBarTime = this.add.text(VIEW_W - 14, 8, '', {
+      fontFamily:'monospace', fontSize:'14px', color:'#f0d060'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999).setVisible(false);
+    this.sessionBarCancel = this.add.text(VIEW_W - 110, 8, '[X] Cancel', {
+      fontFamily:'monospace', fontSize:'13px', color:'#e08070',
+      backgroundColor:'#3a1410', padding:{x:6,y:3}
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999).setVisible(false)
       .setInteractive({ useHandCursor:true });
-    this.skillsBtn.on('pointerdown', function(){ openModal('skills', self); });
-    this.skillsBtn.on('pointerover', function(){
-      self.skillsBtn.setBackgroundColor('#7a4818');
+    var selfHUD = this;
+    this.sessionBarCancel.on('pointerdown', function(){
+      if (confirm('Cancel this session? No XP will be earned.')){
+        sessionCancel();
+        selfHUD.updateSessionBar();
+      }
     });
-    this.skillsBtn.on('pointerout', function(){
-      self.skillsBtn.setBackgroundColor('#5a3818');
-    });
+    this._takeawayPrompted = false;
+  },
+
+  updateSessionBar: function(){
+    var hasSession = ST && ST.session;
+    var visible = !!hasSession;
+    this.sessionBarBg.setVisible(visible);
+    this.sessionBarFill.setVisible(visible);
+    this.sessionBarLabel.setVisible(visible);
+    this.sessionBarTime.setVisible(visible);
+    this.sessionBarCancel.setVisible(visible);
+    if (!visible){
+      this._takeawayPrompted = false;
+      return;
+    }
+    var cfg = CONFIG_SKILLS[ST.session.skill];
+    var label = (cfg ? cfg.activityLabel : ST.session.skill);
+    // Truncate the study sentence for the bar so it fits
+    var study = ST.session.study || '';
+    if (study.length > 50) study = study.substring(0, 47) + '...';
+    this.sessionBarLabel.setText(label + ' \u2014 "' + study + '"');
+    var remaining = sessionRemainingMs();
+    var totalMs = ST.session.duration;
+    var pct = 1 - (remaining / totalMs);
+    this.sessionBarFill.width = VIEW_W * pct;
+    // Time display
+    var m = Math.floor(remaining / 60000);
+    var s = Math.floor((remaining % 60000) / 1000);
+    var pad = s < 10 ? '0' : '';
+    this.sessionBarTime.setText(m + ':' + pad + s);
+    // When the session expires, auto-prompt the takeaway modal exactly once.
+    if (remaining === 0 && !this._takeawayPrompted && !modalIsOpen()){
+      this._takeawayPrompted = true;
+      openModal('takeaway', this);
+    }
   },
 
   showToast: function(msg){
@@ -1729,15 +1937,18 @@ var GardenScene = new Phaser.Class({
       this.player.body.setVelocity(0,0);
       this.player.anims.stop();
     } else {
-      this.updatePlayer();
+      this.updatePlayer(delta);
     }
     this.updateCreatures();
     this.updateFarmer(delta);
     this.updateHUD();
+    this.updateSessionBar();
     if (this.fc % 30 === 0 && this.beds){
       for (var i=0;i<this.beds.length;i++) this.refreshBed(this.beds[i]);
       this.refreshStudyTree();
     }
+    // Update sun-shadow every ~5 seconds (300 frames at 60fps).
+    if (this.fc % 300 === 0 && this.refreshSunShadow) this.refreshSunShadow();
   }
 });
 
@@ -1760,3 +1971,4 @@ var phaserConfig = {
 };
 
 var game = new Phaser.Game(phaserConfig);
+if (typeof window !== 'undefined') window.__phaserGame = game;
