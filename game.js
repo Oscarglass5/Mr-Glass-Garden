@@ -28,15 +28,95 @@ function defaultState(){
   });
   var pr = {}; CONFIG_PRACTICALS.forEach(function(_,i){ pr['p'+i] = false; });
   var at = {}; (CONFIG_ASSESSMENTS||[]).forEach(function(a){ at[a.key] = false; });
+  // Skills: each starts at level 0 with 0 XP
+  var skills = {};
+  if (typeof CONFIG_SKILLS !== 'undefined'){
+    Object.keys(CONFIG_SKILLS).forEach(function(k){ skills[k] = { xp:0, level:0 }; });
+  }
   return {
     dp:dp, qz:qz, pr:pr, at:at,
     mailRead:[], achievements:[],
-    // Character appearance — null means "use the sprite's original colour"
-    appearance: { hair:null, skin:null, clothes:null, eyes:null }
+    appearance: { hair:null, skin:null, clothes:null, eyes:null },
+    skills: skills
   };
 }
 
-// Garden-themed colour palettes for character customisation.
+// ============================================================
+//  SKILLS — Fishing, Botany, Cultivation, Spelunking
+// ============================================================
+// Skills level 0-10. Each skill earns XP through passive study (10 XP per
+// 15-min check-in) or active mini-games (variable). Level N→N+1 costs
+// (100 + 50*N) XP, so level 1 is quick (~25 min), level 10 is slow (~2h).
+// Cumulative XP for level 10 ≈ 3,250 XP ≈ 80 hours per skill at the passive
+// rate alone. Mini-games grant larger chunks so the curve is reachable.
+
+var SKILL_MAX_LEVEL = 10;
+
+var CONFIG_SKILLS = {
+  fishing: {
+    name: 'Fishing',
+    blurb: 'Cast a line in the pond. Each fish is a flashcard.',
+    unlockHint: null,
+    color: '#4878a8',
+    letter: 'F'
+  },
+  botany: {
+    name: 'Botany',
+    blurb: 'Identify plant structures and explain their function.',
+    unlockHint: null,
+    color: '#4a8a48',
+    letter: 'B'
+  },
+  cultivation: {
+    name: 'Cultivation',
+    blurb: 'Build concept maps. Place new decorations around the farm.',
+    unlockHint: 'Unlocks at Module 2 fully confident',
+    color: '#c8901c',
+    letter: 'C'
+  },
+  spelunking: {
+    name: 'Spelunking',
+    blurb: 'Investigate cave specimens with multi-step questions.',
+    unlockHint: 'Unlocks at 75% confident dot points overall',
+    color: '#7a4818',
+    letter: 'S'
+  }
+};
+
+// XP required to advance from `level` to `level+1`.
+function xpForNextLevel(level){
+  if (level >= SKILL_MAX_LEVEL) return Infinity;
+  return 100 + 50 * level;
+}
+
+// Add XP to a skill; may cause multiple level-ups in one call.
+function addSkillXP(skillKey, amount, scene){
+  if (!ST || !ST.skills || !ST.skills[skillKey]) return;
+  if (!CONFIG_SKILLS[skillKey]) return;
+  var s = ST.skills[skillKey];
+  if (s.level >= SKILL_MAX_LEVEL) return;
+  s.xp += amount;
+  var leveledUp = false;
+  while (s.level < SKILL_MAX_LEVEL && s.xp >= xpForNextLevel(s.level)){
+    s.xp -= xpForNextLevel(s.level);
+    s.level += 1;
+    leveledUp = true;
+  }
+  if (s.level >= SKILL_MAX_LEVEL) s.xp = 0;  // Clamp at max
+  saveState();
+  if (leveledUp && scene && scene.showToast){
+    scene.showToast(CONFIG_SKILLS[skillKey].name + ' is now Level ' + s.level + '!');
+  }
+}
+
+// Whether a skill is currently usable (unlocked).
+function skillUnlocked(skillKey){
+  if (skillKey === 'cultivation') return moduleConfidentPct('m2') >= 1;
+  if (skillKey === 'spelunking')  return overallConfidentPct() >= 0.75;
+  return true;
+}
+
+
 // Picked to feel cozy and natural rather than cartoon-bright.
 var CHAR_PALETTES = {
   hair: [
@@ -226,6 +306,14 @@ function loadState(){
       if (s.appearance) {
         ['hair','skin','clothes','eyes'].forEach(function(k){
           if (s.appearance[k] !== undefined) ST.appearance[k] = s.appearance[k];
+        });
+      }
+      if (s.skills) {
+        Object.keys(s.skills).forEach(function(k){
+          if (ST.skills[k] && s.skills[k]){
+            if (typeof s.skills[k].xp === 'number')    ST.skills[k].xp    = s.skills[k].xp;
+            if (typeof s.skills[k].level === 'number') ST.skills[k].level = s.skills[k].level;
+          }
         });
       }
     }
@@ -869,7 +957,8 @@ var GardenScene = new Phaser.Class({
       // Never place forest items on water tiles — the waterfall/stream must
       // extend cleanly to the world border without trees/boulders on top of it.
       if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
-      if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL) return;
+      var tm = this.TM;
+      if (tm && (tm[r][c] === T_WATER || tm[r][c] === T_WATERFALL)) return;
       var h = shrubHash(c, r, salt);
       // Only place ~70% of cells — gives breathing room between firs/mushrooms/boulders
       if ((h % 100) < 30) return;
@@ -1599,6 +1688,20 @@ var GardenScene = new Phaser.Class({
     this.customBtn.on('pointerover', function(){ self.customBtn.setScale(1.55); });
     this.customBtn.on('pointerout',  function(){ self.customBtn.setScale(1.5); });
     this.customBtn.setScale(1.5);
+
+    // ---- Skills button — placed to the LEFT of Customise so they sit together ----
+    this.skillsBtn = this.add.text(VIEW_W - 10 - 144 - 8, VIEW_H - 10, 'SKILLS', {
+      fontFamily:'monospace', fontSize:'12px', color:'#f0d060',
+      backgroundColor:'#5a3818', padding:{x:14, y:12}
+    }).setOrigin(1, 1).setScrollFactor(0).setDepth(99999)
+      .setInteractive({ useHandCursor:true });
+    this.skillsBtn.on('pointerdown', function(){ openModal('skills', self); });
+    this.skillsBtn.on('pointerover', function(){
+      self.skillsBtn.setBackgroundColor('#7a4818');
+    });
+    this.skillsBtn.on('pointerout', function(){
+      self.skillsBtn.setBackgroundColor('#5a3818');
+    });
   },
 
   showToast: function(msg){

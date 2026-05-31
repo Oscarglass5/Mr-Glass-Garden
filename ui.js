@@ -36,6 +36,11 @@ function openModal(id, scene){
     body.innerHTML = customiseHTML();
     attachCustomise();
   }
+  else if (id==='skills'){
+    title.textContent='SKILLS';
+    body.innerHTML = skillsHTML();
+    attachSkills();
+  }
   else if (id==='farmer'){
     title.textContent='THE FARMER';
     _farmerModule = null;
@@ -224,8 +229,66 @@ window.addEventListener('DOMContentLoaded', function(){
 });
 
 // ============================================================
-//  CUSTOMISE — character appearance picker
+//  SKILLS — overview panel + placeholder study buttons
 // ============================================================
+function skillsHTML(){
+  if (typeof CONFIG_SKILLS === 'undefined' || !ST.skills){
+    return '<p class="note">Skills data not available.</p>';
+  }
+  var h = '<p class="note" style="font-size:13px;line-height:1.55">'
+        + 'Build skills through passive study or active mini-games. '
+        + 'Each level needs more XP than the last.</p>';
+  h += '<div class="skillsbox">';
+  Object.keys(CONFIG_SKILLS).forEach(function(key){
+    var cfg = CONFIG_SKILLS[key];
+    var s = ST.skills[key] || { xp:0, level:0 };
+    var locked = !skillUnlocked(key);
+    var atMax = (s.level >= SKILL_MAX_LEVEL);
+    var nextCost = atMax ? 0 : xpForNextLevel(s.level);
+    var pct = atMax ? 100 : Math.min(100, Math.round((s.xp / nextCost) * 100));
+
+    h += '<div class="skillrow' + (locked ? ' locked' : '') + '">';
+    h +=   '<div class="skilllead">';
+    h +=     '<div class="skillicon" style="background:' + cfg.color + '">' + cfg.letter + '</div>';
+    h +=     '<div class="skillbody">';
+    h +=       '<div class="skillname">' + cfg.name + ' <span class="skilllvl">Lv ' + s.level + '</span></div>';
+    h +=       '<div class="skillblurb">' + cfg.blurb + '</div>';
+    if (locked && cfg.unlockHint){
+      h +=     '<div class="skilllock">' + cfg.unlockHint + '</div>';
+    }
+    h +=     '</div>';
+    h +=   '</div>';
+    // XP bar
+    if (atMax){
+      h += '<div class="skillbar"><div class="skillfill" style="width:100%;background:' + cfg.color + '">MAX LEVEL</div></div>';
+    } else {
+      h += '<div class="skillbar"><div class="skillfill" style="width:' + pct + '%;background:' + cfg.color + '"></div>';
+      h +=   '<span class="skillxp">' + s.xp + ' / ' + nextCost + ' XP</span>';
+      h += '</div>';
+    }
+    // Actions
+    if (!locked && !atMax){
+      h += '<div class="skillactions">';
+      h +=   '<button class="studybtn" data-skill="' + key + '">Study session (+10 XP)</button>';
+      h += '</div>';
+    }
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+function attachSkills(){
+  document.querySelectorAll('.studybtn').forEach(function(el){
+    el.onclick = function(){
+      var key = el.dataset.skill;
+      if (!skillUnlocked(key)) return;
+      addSkillXP(key, 10, _modalScene);
+      // Refresh the panel in place
+      document.getElementById('modal-body').innerHTML = skillsHTML();
+      attachSkills();
+    };
+  });
+}
 function customiseHTML(){
   var ap = ST.appearance || { hair:null, skin:null, clothes:null, eyes:null };
   function swatchRow(label, key, palette){

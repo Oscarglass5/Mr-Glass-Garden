@@ -114,6 +114,37 @@
     background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
     padding:8px 14px; cursor:pointer; letter-spacing:1px; }
   .resetbtn:hover { background:#b0d0a0; }
+
+  /* ---- Skills panel ---- */
+  .skillsbox { background:#f4e8c8; border:3px solid #6a4818;
+    box-shadow: inset 0 0 0 1px #d4b878, inset 0 0 0 2px #6a4818;
+    padding:14px; margin-top:10px; }
+  .skillrow { margin-bottom:16px; padding-bottom:12px; border-bottom:1px dashed #c4a868; }
+  .skillrow:last-child { margin-bottom:0; padding-bottom:0; border-bottom:0; }
+  .skillrow.locked { opacity:0.55; }
+  .skilllead { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .skillicon { width:36px; height:36px; flex:none;
+    border:2px solid #2a1804; color:#f4e8c8;
+    font-family:'Press Start 2P', monospace; font-size:14px;
+    display:flex; align-items:center; justify-content:center; }
+  .skillbody { flex:1; min-width:0; }
+  .skillname { font-family:'Press Start 2P', monospace; font-size:10px;
+    color:#3a2004; letter-spacing:1px; }
+  .skilllvl { color:#7a3000; margin-left:4px; }
+  .skillblurb { font-size:13px; color:#5a3a18; margin-top:3px; line-height:1.4; }
+  .skilllock { font-size:12px; color:#a04830; margin-top:4px; font-style:italic; }
+  .skillbar { position:relative; height:18px; background:#3a2a14; border:2px solid #6a4818;
+    margin-bottom:8px; overflow:hidden; }
+  .skillfill { height:100%; transition: width 0.3s ease; color:#f4e8c8;
+    font-family:'Press Start 2P', monospace; font-size:8px;
+    display:flex; align-items:center; justify-content:center; letter-spacing:1px; }
+  .skillxp { position:absolute; right:6px; top:2px; font-size:11px;
+    color:#f4e8c8; text-shadow: 1px 1px 0 #1a0a04; }
+  .skillactions { margin-top:6px; }
+  .studybtn { font-family:'Press Start 2P', monospace; font-size:9px;
+    background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
+    padding:8px 12px; cursor:pointer; letter-spacing:1px; }
+  .studybtn:hover { background:#b0d0a0; }
 </style>
 </head>
 <body>
