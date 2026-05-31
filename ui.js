@@ -258,11 +258,10 @@ function attachCustomise(){
       var cat = el.dataset.cat, hex = el.dataset.hex;
       ST.appearance[cat] = (hex === 'reset') ? null : hex;
       saveState();
-      // Re-apply to the player sprite immediately
+      // Re-apply to the player sprite immediately. The texture's underlying
+      // canvas is repainted in place; refresh() handles the GPU upload.
       if (_modalScene && typeof applyAppearance === 'function'){
         applyAppearance(_modalScene);
-        // Rebind the player sprite's texture so the new pixels show
-        if (_modalScene.player) _modalScene.player.setTexture('player', 0);
       }
       // Refresh the panel to show the new selection state
       document.getElementById('modal-body').innerHTML = customiseHTML();
@@ -275,7 +274,6 @@ function attachCustomise(){
     saveState();
     if (_modalScene && typeof applyAppearance === 'function'){
       applyAppearance(_modalScene);
-      if (_modalScene.player) _modalScene.player.setTexture('player', 0);
     }
     document.getElementById('modal-body').innerHTML = customiseHTML();
     attachCustomise();

@@ -138,27 +138,43 @@ function classifyPixel(r, g, b){
 }
 
 // Recolour the player sprite based on user's chosen palette hexes.
-// Stores the result as a new texture under key 'player' (replacing the original).
+// IMPORTANT: We do not remove + re-add the 'player' texture (that breaks the
+// animation system's WebGL texture refs). Instead, we replace the texture's
+// source with a canvas ONCE on first call, then repaint that same canvas on
+// subsequent calls and tell Phaser the source has changed via refresh().
 function applyAppearance(scene){
   if (!ST || !ST.appearance) return;
-  var srcKey = 'player_src';
-  // Stash the untouched original under 'player_src' on first call
-  if (!scene.textures.exists(srcKey)){
-    var origImg = scene.textures.get('player').getSourceImage();
-    var origCnv = document.createElement('canvas');
-    origCnv.width = origImg.width; origCnv.height = origImg.height;
-    origCnv.getContext('2d').drawImage(origImg, 0, 0);
-    scene.textures.addCanvas(srcKey, origCnv);
+
+  // First call: stash the originals and switch 'player' to a canvas-backed texture.
+  if (!scene.textures.exists('player_src')){
+    var orig = scene.textures.get('player').getSourceImage();
+    if (!orig || !orig.width) return;
+
+    // Stash a copy of the untouched original under 'player_src'
+    var srcCnv = document.createElement('canvas');
+    srcCnv.width = orig.width; srcCnv.height = orig.height;
+    srcCnv.getContext('2d').drawImage(orig, 0, 0);
+    scene.textures.addCanvas('player_src', srcCnv);
+
+    // Replace the 'player' texture (one-time) with a canvas we'll repaint
+    var liveCnv = document.createElement('canvas');
+    liveCnv.width = orig.width; liveCnv.height = orig.height;
+    liveCnv.getContext('2d').drawImage(orig, 0, 0);
+    scene.textures.remove('player');
+    scene.textures.addSpriteSheet('player', liveCnv, { frameWidth:80, frameHeight:80 });
+    scene._playerLiveCanvas = liveCnv;
   }
-  var srcImg = scene.textures.get(srcKey).getSourceImage();
-  var w = srcImg.width, h = srcImg.height;
-  var cnv = document.createElement('canvas');
-  cnv.width = w; cnv.height = h;
-  var ctx = cnv.getContext('2d');
+
+  // Repaint the live canvas: start from the stashed original
+  var liveCnv = scene._playerLiveCanvas;
+  var ctx = liveCnv.getContext('2d');
+  var srcImg = scene.textures.get('player_src').getSourceImage();
+  ctx.clearRect(0, 0, liveCnv.width, liveCnv.height);
   ctx.drawImage(srcImg, 0, 0);
+
   var ap = ST.appearance;
   if (ap.hair || ap.skin || ap.clothes){
-    var imgd = ctx.getImageData(0, 0, w, h);
+    var imgd = ctx.getImageData(0, 0, liveCnv.width, liveCnv.height);
     var d = imgd.data;
     var targets = {
       hair:    ap.hair    ? rgbToHsl(hexToRgb(ap.hair).r,    hexToRgb(ap.hair).g,    hexToRgb(ap.hair).b)    : null,
@@ -169,16 +185,16 @@ function applyAppearance(scene){
       if (d[i+3] === 0) continue;
       var part = classifyPixel(d[i], d[i+1], d[i+2]);
       if (!part || !targets[part]) continue;
-      var orig = rgbToHsl(d[i], d[i+1], d[i+2]);
-      // Take target hue + saturation, keep original luminance (preserves shading).
-      var out = hslToRgb(targets[part][0], targets[part][1], orig[2]);
+      var orig2 = rgbToHsl(d[i], d[i+1], d[i+2]);
+      var out = hslToRgb(targets[part][0], targets[part][1], orig2[2]);
       d[i] = out[0]; d[i+1] = out[1]; d[i+2] = out[2];
     }
     ctx.putImageData(imgd, 0, 0);
   }
-  // Replace the player texture
-  if (scene.textures.exists('player')) scene.textures.remove('player');
-  scene.textures.addSpriteSheet('player', cnv, { frameWidth: 80, frameHeight: 80 });
+
+  // Tell Phaser the texture's source has changed — re-uploads to GPU.
+  var tex = scene.textures.get('player');
+  if (tex && typeof tex.refresh === 'function') tex.refresh();
 }
 
 function loadState(){
@@ -704,21 +720,15 @@ var GardenScene = new Phaser.Class({
     }
 
     // ---- Forest scatter BEYOND the fences (rows 0-1 above top fence, cols 0-1 west of west fence) ----
-    // Mix of thick shrubs, fir trees, mushrooms, and boulders for an authentic woodland feel.
+    // Fir trees, mushrooms, and boulders — no shrubs. Sparse, organic forest edge.
     var FOREST = [
-      // type: 'shrub' | 'fir' | 'mushroom' | 'boulder'
-      // Each entry references a 32x32 region of Details32, with sub-tile rendering size.
-      { type:'shrub',    sx: 14*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.15, dispH: 1.15, weight: 25 },
-      { type:'shrub',    sx: 15*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.15, dispH: 1.15, weight: 25 },
-      { type:'shrub',    sx: 13*32, sy: 5*32, sw: 32, sh: 32, dispW: 1.05, dispH: 1.05, weight: 20 },
-      // Fir trees from Details32 (cols 1-3 rows 9-11, 96x96)
-      { type:'fir',      sx: 32,    sy: 288,  sw: 96, sh: 96, dispW: 2.4,  dispH: 3.2,  weight: 10 },
-      // Mushrooms — Details32 has small mushroom-like tiles around col 12-13 row 12 in Plants.png
-      // but we keep this layer simple using Details32 small detail tiles (cols 0, 1 row 4 = small fungus shapes)
-      { type:'mushroom', sx: 0,     sy: 4*32, sw: 32, sh: 32, dispW: 0.7,  dispH: 0.7,  weight: 8  },
-      // Boulders — Details32 (cols 1-3 row 4)
-      { type:'boulder',  sx: 1*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 6  },
-      { type:'boulder',  sx: 2*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 6  }
+      // Fir trees from Details32 (cols 1-3 rows 9-11, 96x96) — dominant element
+      { type:'fir',      sx: 32,    sy: 288,  sw: 96, sh: 96, dispW: 2.4,  dispH: 3.2,  weight: 30 },
+      // Mushrooms from Details32 col 0 row 4
+      { type:'mushroom', sx: 0,     sy: 4*32, sw: 32, sh: 32, dispW: 0.7,  dispH: 0.7,  weight: 20 },
+      // Boulders from Details32 (cols 1-3 row 4)
+      { type:'boulder',  sx: 1*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 15 },
+      { type:'boulder',  sx: 2*32,  sy: 4*32, sw: 32, sh: 32, dispW: 0.95, dispH: 0.95, weight: 15 }
     ];
     var totalWeight = 0;
     FOREST.forEach(function(f){ totalWeight += f.weight; });
@@ -738,19 +748,36 @@ var GardenScene = new Phaser.Class({
     }
     function placeForestItem(c, r, salt){
       var h = shrubHash(c, r, salt);
+      // Only place ~70% of cells — gives breathing room between firs/mushrooms/boulders
+      if ((h % 100) < 30) return;
       var f = pickForest(h);
       var jx = ((h >>> 5) % 11) - 5;
       var jy = ((h >>> 9) % 7) - 3;
       var wx = c*TS + TS/2 + jx;
       var wy = r*TS + TS + jy;
-      // Optional ground shadow for taller items
-      if (f.type === 'fir' || f.type === 'boulder'){
+      // Optional ground shadow for taller items — at middle of trunk
+      if (f.type === 'fir'){
+        var trunkMidY = wy - (TS * f.dispH * 0.12);
         var sg = this.add.graphics().setDepth(wy - 1);
         sg.fillStyle(0x000000, 0.40);
-        sg.fillEllipse(wx, wy - 2, TS * f.dispW * 0.50, 7);
+        sg.fillEllipse(wx, trunkMidY, TS * f.dispW * 0.45, 7);
+      } else if (f.type === 'boulder'){
+        var sg2 = this.add.graphics().setDepth(wy - 1);
+        sg2.fillStyle(0x000000, 0.35);
+        sg2.fillEllipse(wx, wy - 3, TS * f.dispW * 0.55, 5);
       }
       this._placeCropImage('ts_details', f.sx, f.sy, f.sw, f.sh,
         wx, wy, TS * f.dispW, TS * f.dispH, wy);
+      // Collision: firs and boulders block (mushrooms are decoration only).
+      // These trees/boulders sit beyond the fences anyway, but the colliders
+      // also prevent any future glitching through the fence corners.
+      if (f.type === 'fir'){
+        this.treeColliders = this.treeColliders || [];
+        this.treeColliders.push({ x: wx - 8, y: wy - 10, w: 16, h: 10 });
+      } else if (f.type === 'boulder'){
+        this.treeColliders = this.treeColliders || [];
+        this.treeColliders.push({ x: wx - 12, y: wy - 12, w: 24, h: 12 });
+      }
     }
     var placeFn = placeForestItem.bind(this);
 
@@ -803,19 +830,19 @@ var GardenScene = new Phaser.Class({
     // (Well removed — practicals tracker is now part of the Farmhouse interaction.)
 
     // ---- STUDY TREE (centre of map) — apple tree from Orchard tileset.
-    //      Largest tree when fully grown. Base centred in the central square.
+    //      Largest tree when fully grown. Base sits at the centre of the path-ring
+    //      square (middle row of the 3x3 footprint, NOT the bottom — gives the
+    //      canopy room to extend symmetrically above and below).
     var stX = STUDY_TREE.c * TS, stY = STUDY_TREE.r * TS;
     var stW = STUDY_TREE.w * TS, stH = STUDY_TREE.h * TS;
-    // Centre of the path ring (centre of the 3x3 footprint, anchored at base)
     var centreX = stX + stW/2;
-    var baseY = stY + stH;     // base of the tree sits at the bottom of its footprint
+    var baseY = stY + stH/2 + TS/2;   // bottom of MIDDLE row = centre of square
     this.studyTreeSprite = null;
     this.studyTreeShadow = null;
     this.studyTreeCentreX = centreX;
     this.studyTreeBaseY   = baseY;
-    // Make the apple tree the LARGEST tree at full growth — scale up considerably.
-    this.studyTreeMaxW    = TS * 4.5;
-    this.studyTreeMaxH    = TS * 5.5;
+    this.studyTreeMaxW    = TS * 3.5;
+    this.studyTreeMaxH    = TS * 4.2;
     this.refreshStudyTree();
 
     // ---- CAVE (top-right, beyond river) ----
@@ -859,15 +886,16 @@ var GardenScene = new Phaser.Class({
     var w = this.studyTreeMaxW * v.scale;
     var h = this.studyTreeMaxH * v.scale;
 
-    // Procedural shadow that hugs the BASE/TRUNK (not the full canopy width),
-    // shifted UP from the base of the sprite to sit at trunk level.
-    // The trunk is at the bottom ~15% of these tree sprites.
-    var trunkY = this.studyTreeBaseY - 4;   // shadow sits at trunk base
-    var shadowW = w * 0.40;                  // narrower than canopy
-    var shadowAlpha = 0.30 + v.scale * 0.20; // 0.36 → 0.50 across stages
+    // Procedural shadow that sits AT TRUNK LEVEL (not below the sprite) and
+    // scales generously with tree size — a real tree casts a wide pooled shadow.
+    // Trunk base is roughly at studyTreeBaseY; the shadow ellipse is drawn slightly above.
+    var trunkY = this.studyTreeBaseY - 6;
+    var shadowW = w * 0.70;                  // wider than the trunk, fitting the canopy
+    var shadowH = 8 + v.scale * 14;          // depth grows with tree size
+    var shadowAlpha = 0.32 + v.scale * 0.22; // 0.39 → 0.54 across stages
     this.studyTreeShadow = this.add.graphics().setDepth(this.studyTreeBaseY - 1);
     this.studyTreeShadow.fillStyle(0x000000, shadowAlpha);
-    this.studyTreeShadow.fillEllipse(this.studyTreeCentreX, trunkY, shadowW, 6 + v.scale * 8);
+    this.studyTreeShadow.fillEllipse(this.studyTreeCentreX, trunkY, shadowW, shadowH);
 
     this.studyTreeSprite = this._placeCropImage('ts_orchard', v.sx, v.sy, v.sw, v.sh,
       this.studyTreeCentreX, this.studyTreeBaseY, w, h, this.studyTreeBaseY);
@@ -991,6 +1019,8 @@ var GardenScene = new Phaser.Class({
     // ---- Scatter trees deterministically ----
     var placed = [];
     var MIN_TREE_DIST = 3.2;
+    // Track tree trunk centres for collision (created by buildPlayer)
+    this.treeColliders = this.treeColliders || [];
     for (var r=0; r<MAP_H; r++){
       for (var c=0; c<MAP_W; c++){
         if (!isOpenGrass(c, r)) continue;
@@ -1011,15 +1041,18 @@ var GardenScene = new Phaser.Class({
         var jy = ((h >>> 4) % 5) - 2;
         var wx = c*TS + TS/2 + jx;
         var wy = r*TS + TS + jy;
-        // Procedural drop shadow — at the TRUNK level, not below the leaves.
-        // Tree sprites are drawn with origin (0.5, 1) so wy is the base; the
-        // trunk meets ground roughly at wy itself, but we nudge up slightly so
-        // the shadow visually anchors to the trunk rather than overshooting.
+        // Procedural drop shadow at the MIDDLE of the trunk (raised well above base).
+        // Tree sprite is drawn with origin (0.5, 1) so wy is its base. The trunk
+        // occupies roughly the bottom 25-30% of the sprite — shadow sits in that band.
+        var trunkMidY = wy - (TS * variant.dispH * 0.10);
         var sg = self.add.graphics().setDepth(wy - 1);
         sg.fillStyle(0x000000, 0.40);
-        sg.fillEllipse(wx, wy - 2, TS * variant.dispW * 0.40, 8);
+        sg.fillEllipse(wx, trunkMidY, TS * variant.dispW * 0.50, 8);
         self._placeCropImage('ts_details', variant.sx, variant.sy, variant.sw, variant.sh,
           wx, wy, TS * variant.dispW, TS * variant.dispH, wy);
+        // Trunk collision: a small box at the base of the tree (~12x10 px).
+        // The player can brush right up against the canopy, but the trunk blocks them.
+        self.treeColliders.push({ x: wx - 6, y: wy - 8, w: 12, h: 8 });
       }
     }
 
@@ -1204,6 +1237,19 @@ var GardenScene = new Phaser.Class({
       }
     }
     this.physics.add.collider(this.player, this.solids);
+
+    // Tree-trunk and boulder colliders (gathered during buildDecorations).
+    // Each collider is a tiny static rectangle so the player blocks against
+    // the trunk but can still walk closely around the canopy.
+    if (this.treeColliders && this.treeColliders.length){
+      var trunkGroup = this.physics.add.staticGroup();
+      this.treeColliders.forEach(function(tc){
+        var r = self.add.rectangle(tc.x, tc.y, tc.w, tc.h).setOrigin(0, 0);
+        self.physics.add.existing(r, true);
+        trunkGroup.add(r);
+      });
+      this.physics.add.collider(this.player, trunkGroup);
+    }
   },
 
   updatePlayer: function(){
