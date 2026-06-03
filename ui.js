@@ -57,6 +57,11 @@ function openModal(id, scene){
     title.textContent='CAVE — EXTENSION';
     body.innerHTML = '<p class="note" style="font-size:13px;line-height:1.8">The vines part. You step inside.<br><br>Extension content will appear here as it unlocks.</p>';
   }
+  else if (id==='takeaway'){
+    // Called automatically when a passive session timer expires
+    openTakeawayModal();
+    return;   // openTakeawayModal builds its own content; skip the ov.classList.add below
+  }
 }
 
 // ============================================================
@@ -229,65 +234,244 @@ window.addEventListener('DOMContentLoaded', function(){
 });
 
 // ============================================================
-//  SKILLS — overview panel + placeholder study buttons
+//  SKILLS — panel with correct totalXP state model
 // ============================================================
 function skillsHTML(){
   if (typeof CONFIG_SKILLS === 'undefined' || !ST.skills){
     return '<p class="note">Skills data not available.</p>';
   }
-  var h = '<p class="note" style="font-size:13px;line-height:1.55">'
-        + 'Build skills through passive study or active mini-games. '
-        + 'Each level needs more XP than the last.</p>';
+
+  // Check if a session is currently active
+  var activeSession = ST.session;
+  var activeRemaining = activeSession ? sessionRemainingMs() : 0;
+  var activeExpired   = activeSession && activeRemaining === 0;
+
+  var h = '';
+
+  // ---- Active session banner ----
+  if (activeSession){
+    var acfg = CONFIG_SKILLS[activeSession.skill] || {};
+    if (activeExpired){
+      h += '<div class="session-banner expired">'
+         + '<b>Session complete!</b> Close this panel and submit your takeaway.'
+         + '</div>';
+    } else {
+      var am = Math.floor(activeRemaining/60000), as2 = Math.floor((activeRemaining%60000)/1000);
+      h += '<div class="session-banner active">'
+         + '<b>' + (acfg.activityLabel || activeSession.skill) + '</b><br>'
+         + '"' + (activeSession.study||'').substring(0,80) + '"<br>'
+         + '<span class="session-time">' + am + ':' + (as2<10?'0':'') + as2 + ' remaining</span>'
+         + '</div>';
+    }
+  }
+
+  h += '<p class="note" style="font-size:13px;line-height:1.55">'
+     + 'Start a 15-minute study session to earn ' + SESSION_XP_REWARD + ' XP. '
+     + 'Each level costs more XP than the last.</p>';
+
+  // ---- Tabs: Skills | Journal ----
+  h += '<div class="skill-tabs">'
+     + '<button class="skill-tab active" id="tab-skills">Skills</button>'
+     + '<button class="skill-tab" id="tab-journal">Journal (' + (ST.journal ? ST.journal.length : 0) + ')</button>'
+     + '</div>';
+  h += '<div id="skills-panel">';
+
   h += '<div class="skillsbox">';
   Object.keys(CONFIG_SKILLS).forEach(function(key){
     var cfg = CONFIG_SKILLS[key];
-    var s = ST.skills[key] || { xp:0, level:0 };
     var locked = !skillUnlocked(key);
-    var atMax = (s.level >= SKILL_MAX_LEVEL);
-    var nextCost = atMax ? 0 : xpForNextLevel(s.level);
-    var pct = atMax ? 100 : Math.min(100, Math.round((s.xp / nextCost) * 100));
+    var pr = progressFor((ST.skills[key] || {totalXP:0}).totalXP);
+    var atMax = pr.level >= SKILL_MAX_LEVEL;
+    var pct = atMax ? 100 : (pr.next > 0 ? Math.min(100, Math.round(pr.xp / pr.next * 100)) : 0);
+    var sessionActive = activeSession && activeSession.skill === key && !activeExpired;
 
     h += '<div class="skillrow' + (locked ? ' locked' : '') + '">';
     h +=   '<div class="skilllead">';
     h +=     '<div class="skillicon" style="background:' + cfg.color + '">' + cfg.letter + '</div>';
     h +=     '<div class="skillbody">';
-    h +=       '<div class="skillname">' + cfg.name + ' <span class="skilllvl">Lv ' + s.level + '</span></div>';
+    h +=       '<div class="skillname">' + cfg.name + ' <span class="skilllvl">Lv ' + pr.level + '</span></div>';
     h +=       '<div class="skillblurb">' + cfg.blurb + '</div>';
     if (locked && cfg.unlockHint){
       h +=     '<div class="skilllock">' + cfg.unlockHint + '</div>';
     }
     h +=     '</div>';
     h +=   '</div>';
-    // XP bar
     if (atMax){
       h += '<div class="skillbar"><div class="skillfill" style="width:100%;background:' + cfg.color + '">MAX LEVEL</div></div>';
     } else {
-      h += '<div class="skillbar"><div class="skillfill" style="width:' + pct + '%;background:' + cfg.color + '"></div>';
-      h +=   '<span class="skillxp">' + s.xp + ' / ' + nextCost + ' XP</span>';
-      h += '</div>';
+      h += '<div class="skillbar"><div class="skillfill" style="width:' + pct + '%;background:' + cfg.color + '"></div>'
+         + '<span class="skillxp">' + pr.xp + ' / ' + pr.next + ' XP (Total: ' + (ST.skills[key]||{totalXP:0}).totalXP + ')</span>'
+         + '</div>';
     }
-    // Actions
     if (!locked && !atMax){
       h += '<div class="skillactions">';
-      h +=   '<button class="studybtn" data-skill="' + key + '">Study session (+10 XP)</button>';
+      if (sessionActive){
+        h += '<button class="studybtn disabled" disabled>Session in progress...</button>';
+      } else if (activeSession && !activeExpired){
+        h += '<button class="studybtn disabled" disabled>Finish active session first</button>';
+      } else {
+        h += '<button class="studybtn" data-skill="' + key + '">Start study session (earn ' + SESSION_XP_REWARD + ' XP)</button>';
+      }
       h += '</div>';
     }
+    h += '</div>';
+  });
+  h += '</div>';  // skillsbox
+
+  h += '</div>';  // skills-panel
+
+  h += '<div id="journal-panel" style="display:none">';
+  h += journalHTML();
+  h += '</div>';
+
+  return h;
+}
+
+function journalHTML(){
+  if (!ST.journal || ST.journal.length === 0){
+    return '<p class="note">No journal entries yet. Complete a study session to add one.</p>';
+  }
+  var h = '<div class="journal-list">';
+  ST.journal.forEach(function(entry){
+    var cfg = CONFIG_SKILLS[entry.skill] || {};
+    var d = new Date(entry.timestamp);
+    var dateStr = d.toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'});
+    h += '<div class="journal-entry">';
+    h +=   '<div class="journal-head">';
+    h +=     '<span class="journal-skill" style="background:' + (cfg.color||'#888') + '">' + (cfg.name||entry.skill) + '</span>';
+    h +=     '<span class="journal-date">' + dateStr + '</span>';
+    h +=     '<span class="journal-xp">+' + entry.xp + ' XP</span>';
+    h +=   '</div>';
+    h +=   '<div class="journal-study"><b>Studied:</b> ' + entry.study + '</div>';
+    h +=   '<div class="journal-takeaway"><b>Takeaway:</b> ' + entry.takeaway + '</div>';
+    h +=   '<button class="removebtn" data-eid="' + entry.id + '">Remove &amp; refund XP</button>';
     h += '</div>';
   });
   h += '</div>';
   return h;
 }
+
 function attachSkills(){
-  document.querySelectorAll('.studybtn').forEach(function(el){
+  // Tab switching
+  var tabSkills   = document.getElementById('tab-skills');
+  var tabJournal  = document.getElementById('tab-journal');
+  var panelSkills  = document.getElementById('skills-panel');
+  var panelJournal = document.getElementById('journal-panel');
+  if (tabSkills && tabJournal){
+    tabSkills.onclick = function(){
+      tabSkills.classList.add('active'); tabJournal.classList.remove('active');
+      panelSkills.style.display = ''; panelJournal.style.display = 'none';
+    };
+    tabJournal.onclick = function(){
+      tabJournal.classList.add('active'); tabSkills.classList.remove('active');
+      panelJournal.style.display = ''; panelSkills.style.display = 'none';
+    };
+  }
+  // Start session buttons
+  document.querySelectorAll('.studybtn:not(.disabled)').forEach(function(el){
     el.onclick = function(){
       var key = el.dataset.skill;
-      if (!skillUnlocked(key)) return;
-      addSkillXP(key, 10, _modalScene);
-      // Refresh the panel in place
-      document.getElementById('modal-body').innerHTML = skillsHTML();
-      attachSkills();
+      if (!key || !skillUnlocked(key)) return;
+      openStudyPromptFor(key);
     };
   });
+  // Journal remove buttons
+  document.querySelectorAll('.removebtn').forEach(function(el){
+    el.onclick = function(){
+      var eid = el.dataset.eid;
+      if (confirm('Remove this entry and refund its XP?')){
+        journalRemoveEntry(eid);
+        document.getElementById('modal-body').innerHTML = skillsHTML();
+        attachSkills();
+        // re-switch to journal tab
+        var tj = document.getElementById('tab-journal');
+        var ts = document.getElementById('tab-skills');
+        var pj = document.getElementById('journal-panel');
+        var ps = document.getElementById('skills-panel');
+        if (tj){ tj.classList.add('active'); ts.classList.remove('active'); pj.style.display=''; ps.style.display='none'; }
+      }
+    };
+  });
+}
+
+// ---- Study prompt modal (pre-session sentence entry) ----
+function openStudyPromptFor(skillKey){
+  var cfg = CONFIG_SKILLS[skillKey];
+  if (!cfg) return;
+  closeModal();
+  var ov = document.getElementById('modal-overlay');
+  var title = document.getElementById('modal-title');
+  var body  = document.getElementById('modal-body');
+  title.textContent = cfg.name.toUpperCase() + ' — START SESSION';
+  body.innerHTML =
+    '<p class="note" style="font-size:13px;line-height:1.65">'
+    + 'Before your ' + SESSION_DURATION_MS/60000 + '-minute ' + cfg.activityLabel.toLowerCase() + ' session, '
+    + 'write one sentence about what you plan to focus on.'
+    + '</p>'
+    + '<textarea id="study-input" style="width:100%;height:80px;box-sizing:border-box;'
+    + 'font-family:monospace;font-size:13px;background:#1a1208;color:#f0d060;'
+    + 'border:1px solid #6a5030;padding:8px;resize:vertical" '
+    + 'placeholder="e.g. I am going to review the fluid mosaic model and membrane transport."></textarea>'
+    + '<div style="margin-top:12px;display:flex;gap:10px">'
+    + '<button class="studybtn" id="study-start-btn" data-skill="' + skillKey + '">Start session</button>'
+    + '<button class="backbtn" id="study-cancel-btn">Cancel</button>'
+    + '</div>';
+  ov.classList.add('open');
+  var startBtn  = document.getElementById('study-start-btn');
+  var cancelBtn = document.getElementById('study-cancel-btn');
+  var input     = document.getElementById('study-input');
+  cancelBtn.onclick = function(){ openModal('skills', _modalScene); };
+  startBtn.onclick  = function(){
+    var text = (input.value || '').trim();
+    if (!text){ input.style.border = '1px solid #c04040'; return; }
+    if (!sessionStart(skillKey, text)){
+      body.innerHTML = '<p class="note">A session is already in progress. Finish it first.</p>';
+      return;
+    }
+    if (_modalScene && _modalScene.updateSessionBar) _modalScene.updateSessionBar();
+    closeModal();
+    if (_modalScene) _modalScene.showToast('Session started! Come back in ' + SESSION_DURATION_MS/60000 + ' min.');
+  };
+}
+
+// ---- Takeaway modal (post-session sentence entry) ----
+function openTakeawayModal(){
+  var s = ST.session;
+  if (!s){ closeModal(); return; }
+  var cfg = CONFIG_SKILLS[s.skill] || {};
+  var ov = document.getElementById('modal-overlay');
+  var title = document.getElementById('modal-title');
+  var body  = document.getElementById('modal-body');
+  title.textContent = cfg.name ? cfg.name.toUpperCase() + ' — SESSION COMPLETE' : 'SESSION COMPLETE';
+  body.innerHTML =
+    '<p class="note" style="font-size:13px;line-height:1.65">'
+    + 'Well done! Write one sentence summarising what you learned or revised.'
+    + '</p>'
+    + '<div style="font-size:12px;color:#a09070;margin-bottom:8px">'
+    + 'You studied: &ldquo;' + s.study + '&rdquo;</div>'
+    + '<textarea id="takeaway-input" style="width:100%;height:80px;box-sizing:border-box;'
+    + 'font-family:monospace;font-size:13px;background:#1a1208;color:#f0d060;'
+    + 'border:1px solid #6a5030;padding:8px;resize:vertical" '
+    + 'placeholder="e.g. I revised how the sodium-potassium pump uses active transport..."></textarea>'
+    + '<div style="margin-top:12px">'
+    + '<button class="studybtn" id="takeaway-submit-btn">Submit &amp; earn ' + SESSION_XP_REWARD + ' XP</button>'
+    + '</div>'
+    + '<p class="note" style="font-size:11px;margin-top:10px;color:#806840">'
+    + 'This entry will be saved to your journal.</p>';
+  ov.classList.add('open');
+  var submitBtn = document.getElementById('takeaway-submit-btn');
+  var input     = document.getElementById('takeaway-input');
+  submitBtn.onclick = function(){
+    var text = (input.value || '').trim();
+    if (!text){ input.style.border = '1px solid #c04040'; return; }
+    var entry = sessionComplete(text);
+    if (entry && _modalScene){
+      addSkillXP(entry.skill, entry.xp, _modalScene);
+      if (_modalScene.updateSessionBar) _modalScene.updateSessionBar();
+      _modalScene.showToast('+' + entry.xp + ' XP! Entry saved to journal.');
+    }
+    closeModal();
+  };
 }
 function customiseHTML(){
   var ap = ST.appearance || { hair:null, skin:null, clothes:null, eyes:null };

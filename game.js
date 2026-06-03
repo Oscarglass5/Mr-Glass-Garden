@@ -765,6 +765,35 @@ var GardenScene = new Phaser.Class({
     pathRect(37, 38,  3, 26);
     pathRect(36, 38,  3,  4);
 
+    // ---- Perimeter paths around each garden bed (1 tile wide outside each bed) ----
+    // North and south sides, then west and east sides. p() skips T_DIRT so the bed
+    // interior is never overwritten. The perimeter also bridges any gap between the
+    // existing network spurs and the bed edges.
+    //
+    // M1 (cols 4-7, rows 18-21): connect from vertical spur (cols 6-7 rows 16-17)
+    pathRect(3,  8, 17, 17);   // N side of M1
+    pathRect(3,  8, 22, 22);   // S side of M1
+    pathRect(3,  3, 17, 22);   // W side of M1
+    pathRect(8,  8, 17, 22);   // E side of M1
+
+    // M2 (cols 26-29, rows 4-7): connect from spur (cols 24-25, rows 6-8)
+    pathRect(25, 30, 3,  3);   // N side of M2
+    pathRect(25, 30, 8,  8);   // S side of M2 — also bridges spur col 25 to bed col 26
+    pathRect(25, 25, 3,  8);   // W side of M2
+    pathRect(30, 30, 3,  8);   // E side of M2
+
+    // M3 (cols 27-30, rows 17-20): connect from lower-corridor spur (cols 25-26, rows 16-17)
+    pathRect(26, 31, 16, 16);  // N side of M3 — extends spur east to col 26+
+    pathRect(26, 31, 21, 21);  // S side of M3
+    pathRect(26, 26, 16, 21);  // W side of M3
+    pathRect(31, 31, 16, 21);  // E side of M3
+
+    // M4 (cols 13-16, rows 21-24): connect from M4 corridor (cols 13-19, rows 19-20)
+    pathRect(12, 17, 20, 20);  // N side of M4
+    pathRect(12, 17, 25, 25);  // S side of M4
+    pathRect(12, 12, 20, 25);  // W side of M4
+    pathRect(17, 17, 20, 25);  // E side of M4
+
     // ---- Garden bed soil overrides path/grass ----
     BED_DEFS.forEach(function(b){
       for (var r=b.r1;r<=b.r2;r++) for (var c=b.c1;c<=b.c2;c++) TM[r][c] = T_DIRT;
@@ -813,6 +842,10 @@ var GardenScene = new Phaser.Class({
     function isGrass(c, r){
       // Off-map tiles count as grass so the world edge doesn't get hard-cut.
       if (r<0 || r>=MAP_H || c<0 || c>=MAP_W) return true;
+      // Water tiles are treated as grass for autotile purposes — the water rim
+      // tiles handle the visual transition, so grass next to water should use
+      // interior grass variants (no transparent edge gaps, no colour mismatch).
+      if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL) return true;
       return TM[r][c] === T_GRASS;
     }
     function pickGrass(c, r){
@@ -820,25 +853,29 @@ var GardenScene = new Phaser.Class({
       var hS = !isGrass(c, r+1);
       var hW = !isGrass(c-1, r);
       var hE = !isGrass(c+1, r);
-      // Outer corners take precedence (two orthogonal neighbours non-grass)
-      if (hN && hW) return 'nw';
-      if (hN && hE) return 'ne';
-      if (hS && hW) return 'sw';
-      if (hS && hE) return 'se';
+      // Convex (outer) corners — two orthogonal neighbours are non-grass.
+      // These use the uL/uR/dL/dR sheet cells which hold the rounded corner sprites.
+      // (The nw/ne/sw/se cells at [0,0],[2,0],[0,2],[2,2] are the concave inner-corner
+      //  sprites used when a diagonal-only neighbour is non-grass.)
+      if (hN && hW) return 'uL';
+      if (hN && hE) return 'uR';
+      if (hS && hW) return 'dL';
+      if (hS && hE) return 'dR';
       // Edges
       if (hN) return 'n';
       if (hS) return 's';
       if (hW) return 'w';
       if (hE) return 'e';
-      // Inner corners — all 4 orthogonal are grass, but a diagonal is non-grass
+      // Concave (inner) corners — all 4 orthogonal are grass, but a diagonal is non-grass.
+      // These use nw/ne/sw/se which hold the small inner-bite corner sprites.
       var dNW = !isGrass(c-1, r-1);
       var dNE = !isGrass(c+1, r-1);
       var dSW = !isGrass(c-1, r+1);
       var dSE = !isGrass(c+1, r+1);
-      if (dNW) return 'uL';
-      if (dNE) return 'uR';
-      if (dSW) return 'dL';
-      if (dSE) return 'dR';
+      if (dNW) return 'nw';
+      if (dNE) return 'ne';
+      if (dSW) return 'sw';
+      if (dSE) return 'se';
       // Pure interior — randomise across 4 variants for visual texture
       var h = ((c*2654435761) ^ (r*2246822519)) >>> 0;
       return ['c0','c1','c2','c3'][h % 4];
@@ -1247,14 +1284,14 @@ var GardenScene = new Phaser.Class({
     //   stage 2: white blossom     px(64,   0, 96, 96)
     //   stage 3: green leafy       px(160,  0, 96, 96)
     //   stage 4: bigger green      px(256,  0, 96, 96)
-    //   stage 5: red apple         px(352,  0, 96, 96)
+    //   stage 5: red apple         px(256,  0, 96, 96)  -- NOTE: px 352 is the snowy/dead winter variant, do NOT use
     var VARIANTS = [
       null,
       { sx:32,  sy:64, sw:32, sh:64, scale:0.30 },
       { sx:64,  sy:0,  sw:96, sh:96, scale:0.55 },
       { sx:160, sy:0,  sw:96, sh:96, scale:0.75 },
       { sx:256, sy:0,  sw:96, sh:96, scale:0.90 },
-      { sx:352, sy:0,  sw:96, sh:96, scale:1.00 }
+      { sx:256, sy:0,  sw:96, sh:96, scale:1.00 }   // red-apple variant (px 256) — NOT px 352 which is the snowy/dead winter tree
     ];
     var v = VARIANTS[stage];
     var w = this.studyTreeMaxW * v.scale;
@@ -1773,7 +1810,23 @@ var GardenScene = new Phaser.Class({
       { id:'house',     label:'FARMHOUSE — Practicals',     cx: FARMHOUSE.c + FARMHOUSE.w/2, cy: FARMHOUSE.r + FARMHOUSE.h/2, r:4.5 },
       { id:'tree',      label:'STUDY TREE — Quizzes',        cx: STUDY_TREE.c + STUDY_TREE.w/2, cy: STUDY_TREE.r + STUDY_TREE.h/2, r:3.5 },
       { id:'mailbox',   label:'NOTICEBOARD — Messages',      cx: NOTICEBOARD.c + 0.5, cy: NOTICEBOARD.r + 0.5, r:2.0 },
-      { id:'cave',      label:'CAVE — Extension',            cx: CAVE.c + CAVE.w/2, cy: CAVE.r + CAVE.h/2, r:4.0 }
+      { id:'cave',      label:'CAVE — Extension',            cx: CAVE.c + CAVE.w/2, cy: CAVE.r + CAVE.h/2, r:4.0 },
+      // Skills: pond triggers Fishing, each garden bed triggers Botany/Cultivation/Spelunking
+      // Pond centre approx (4, 25) in tile coords
+      { id:'skills',    label:'POND — Fishing skill',        cx: 4,  cy: 25, r:4.5,
+        _skillHint: 'fishing' },
+      // M1 bed
+      { id:'skills',    label:'M1 BED — Botany skill',       cx: BED_DEFS[0].c1 + (BED_DEFS[0].c2-BED_DEFS[0].c1)/2,
+        cy: BED_DEFS[0].r1 + (BED_DEFS[0].r2-BED_DEFS[0].r1)/2, r:3.5 },
+      // M2 bed
+      { id:'skills',    label:'M2 BED — Botany skill',       cx: BED_DEFS[1].c1 + (BED_DEFS[1].c2-BED_DEFS[1].c1)/2,
+        cy: BED_DEFS[1].r1 + (BED_DEFS[1].r2-BED_DEFS[1].r1)/2, r:3.5 },
+      // M3 bed
+      { id:'skills',    label:'M3 BED — Botany skill',       cx: BED_DEFS[2].c1 + (BED_DEFS[2].c2-BED_DEFS[2].c1)/2,
+        cy: BED_DEFS[2].r1 + (BED_DEFS[2].r2-BED_DEFS[2].r1)/2, r:3.5 },
+      // M4 bed
+      { id:'skills',    label:'M4 BED — Botany skill',       cx: BED_DEFS[3].c1 + (BED_DEFS[3].c2-BED_DEFS[3].c1)/2,
+        cy: BED_DEFS[3].r1 + (BED_DEFS[3].r2-BED_DEFS[3].r1)/2, r:3.5 }
     ];
   },
 

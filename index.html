@@ -145,6 +145,36 @@
     background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
     padding:8px 12px; cursor:pointer; letter-spacing:1px; }
   .studybtn:hover { background:#b0d0a0; }
+  .studybtn.disabled, .studybtn[disabled] { opacity:0.5; cursor:not-allowed; background:#9ac08a; }
+
+  /* ---- Skill tabs ---- */
+  .skill-tabs { display:flex; gap:0; margin-bottom:12px; border-bottom:3px solid #6a4818; }
+  .skill-tab { font-family:'Press Start 2P', monospace; font-size:9px;
+    background:#e8d8a0; border:2px solid #6a4818; border-bottom:none;
+    color:#3a2a10; padding:7px 14px; cursor:pointer; letter-spacing:1px; margin-right:2px; }
+  .skill-tab.active { background:#f4e8c8; color:#1a0e00; }
+  .skill-tab:hover { background:#f0dfa8; }
+
+  /* ---- Active session banner ---- */
+  .session-banner { padding:10px 12px; margin-bottom:10px; font-size:12px;
+    font-family:monospace; line-height:1.6; border:2px solid; }
+  .session-banner.active { background:#1a2a14; border-color:#4a8a30; color:#a0d080; }
+  .session-banner.expired { background:#2a1408; border-color:#c04020; color:#f0a060;
+    font-family:'Press Start 2P', monospace; font-size:9px; text-align:center; padding:14px; }
+  .session-time { font-family:'Press Start 2P', monospace; font-size:9px; color:#80d060; }
+
+  /* ---- Journal ---- */
+  .journal-list { display:flex; flex-direction:column; gap:10px; }
+  .journal-entry { background:#fff8e8; border:2px solid #c8a868; padding:11px 13px; }
+  .journal-head { display:flex; align-items:center; gap:8px; margin-bottom:7px; flex-wrap:wrap; }
+  .journal-skill { font-family:'Press Start 2P', monospace; font-size:8px;
+    color:#f4e8c8; padding:3px 7px; }
+  .journal-date { font-size:12px; color:#806840; flex:1; }
+  .journal-xp { font-family:'Press Start 2P', monospace; font-size:8px; color:#4a8a30; }
+  .journal-study, .journal-takeaway { font-size:12px; line-height:1.6; color:#3a2a10; margin-bottom:4px; }
+  .removebtn { font-family:monospace; font-size:11px; background:#e8c0a0;
+    border:1px solid #a06030; color:#5a2010; padding:3px 8px; cursor:pointer; margin-top:6px; }
+  .removebtn:hover { background:#f0a080; }
 
   /* ---- Tab bar in Character modal ---- */
   .tabbar { display:flex; gap:0; margin-bottom:14px; border-bottom:3px solid #6a4818; }
