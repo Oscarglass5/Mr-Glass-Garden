@@ -3,7 +3,8 @@
 //  Pure DOM, sits above the Phaser canvas.
 // ============================================================
 var _modalScene = null;
-var _farmerModule = null;  // when set (e.g. 'm1'), shows that module's dot points
+var _farmerModule = null;    // when set (e.g. 'm1'), shows that module's dot points
+var _pendingSkillHint = null; // set before openModal('skills') to auto-open a specific skill's prompt
 
 function modalIsOpen(){
   return document.getElementById('modal-overlay').classList.contains('open');
@@ -11,6 +12,10 @@ function modalIsOpen(){
 function closeModal(){
   document.getElementById('modal-overlay').classList.remove('open');
   _farmerModule = null;
+  // Re-enable Phaser keyboard capture when modal closes
+  if (_modalScene && _modalScene.input && _modalScene.input.keyboard){
+    _modalScene.input.keyboard.enableGlobalCapture();
+  }
 }
 function pbColor(pct){
   if (pct>=1) return '#40c020';
@@ -21,6 +26,10 @@ function pbColor(pct){
 
 function openModal(id, scene){
   _modalScene = scene;
+  // Disable Phaser keyboard capture so textarea/input elements receive keystrokes
+  if (scene && scene.input && scene.input.keyboard){
+    scene.input.keyboard.disableGlobalCapture();
+  }
   var ov = document.getElementById('modal-overlay');
   var title = document.getElementById('modal-title');
   var body = document.getElementById('modal-body');
@@ -37,6 +46,15 @@ function openModal(id, scene){
     attachCustomise();
   }
   else if (id==='skills'){
+    // If a specific skill was hinted (e.g. pressing E at pond → fishing),
+    // skip straight to the study prompt for that skill.
+    if (_pendingSkillHint && skillUnlocked(_pendingSkillHint) && !ST.session){
+      var hint = _pendingSkillHint;
+      _pendingSkillHint = null;
+      openStudyPromptFor(hint);
+      return;
+    }
+    _pendingSkillHint = null;
     title.textContent='SKILLS';
     body.innerHTML = skillsHTML();
     attachSkills();
@@ -273,6 +291,7 @@ function skillsHTML(){
   h += '<div class="skill-tabs">'
      + '<button class="skill-tab active" id="tab-skills">Skills</button>'
      + '<button class="skill-tab" id="tab-journal">Journal (' + (ST.journal ? ST.journal.length : 0) + ')</button>'
+     + '<button class="skill-tab" id="tab-fish">Fish Log</button>'
      + '</div>';
   h += '<div id="skills-panel">';
 
@@ -324,6 +343,10 @@ function skillsHTML(){
   h += journalHTML();
   h += '</div>';
 
+  h += '<div id="fish-panel" style="display:none">';
+  h += fishLogHTML();
+  h += '</div>';
+
   return h;
 }
 
@@ -351,21 +374,124 @@ function journalHTML(){
   return h;
 }
 
+// ---- Fish log tab content ----
+function fishLogHTML(){
+  if (!ST.fishCaught || Object.keys(ST.fishCaught).length === 0){
+    return '<p class="note">No fish caught yet. Complete a fishing session to catch some!</p>';
+  }
+  var h = '<div class="journal-list">';
+  // Sort: rare first, then uncommon, then common
+  var byRarity = { rare:[], uncommon:[], common:[] };
+  FISH_DEFS.forEach(function(f){
+    var count = ST.fishCaught[f.id] || 0;
+    if (count > 0) byRarity[f.rarity].push({ def:f, count:count });
+  });
+  ['rare','uncommon','common'].forEach(function(rarity){
+    if (!byRarity[rarity].length) return;
+    h += '<div class="journal-head"><span class="journal-skill" style="background:'
+       + (rarity==='rare'?'#8a3070':rarity==='uncommon'?'#4878a8':'#4a6028')
+       + '">' + rarity.toUpperCase() + '</span></div>';
+    byRarity[rarity].forEach(function(item){
+      h += '<div class="journal-entry" style="padding:8px 12px;">';
+      h += '<div class="journal-head">';
+      // Fish sprite from fish_pack.png
+      h += '<canvas id="fishcanvas_' + item.def.id + '" width="32" height="32" '
+         + 'style="image-rendering:pixelated;width:48px;height:48px;border:1px solid #c8a868;"></canvas>';
+      h += '<span style="font-family:monospace;font-size:14px;flex:1;margin-left:10px">' + item.def.name + '</span>';
+      h += '<span class="journal-xp">×' + item.count + '</span>';
+      h += '</div></div>';
+    });
+  });
+  h += '</div>';
+  return h;
+}
+
+function attachFishCanvases(){
+  // Draw each fish sprite onto its canvas element after the DOM is built
+  var fishImg = null;
+  try {
+    var tex = (typeof Phaser !== 'undefined' && window.__phaserGame)
+      ? window.__phaserGame.scene.scenes[1].textures.get('fish_pack')
+      : null;
+    if (tex) fishImg = tex.getSourceImage();
+  } catch(e){}
+  if (!fishImg) return;
+  FISH_DEFS.forEach(function(f){
+    var canvas = document.getElementById('fishcanvas_' + f.id);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(fishImg, f.gridX*32, f.gridY*32, 32, 32, 0, 0, 32, 32);
+  });
+}
+
+function showFishCatchModal(caught){
+  var ov = document.getElementById('modal-overlay');
+  var title = document.getElementById('modal-title');
+  var body = document.getElementById('modal-body');
+  title.textContent = 'SESSION COMPLETE — FISH CAUGHT!';
+  var h = '<p class="note" style="font-size:13px">Good work. Here\'s what you caught:</p>';
+  h += '<div style="display:flex;gap:16px;justify-content:center;padding:16px 0;flex-wrap:wrap">';
+  caught.forEach(function(f){
+    h += '<div style="text-align:center">';
+    h += '<canvas id="catchcanvas_' + f.id + '" width="32" height="32" '
+       + 'style="image-rendering:pixelated;width:64px;height:64px;display:block;margin:0 auto 6px;"></canvas>';
+    h += '<div style="font-family:monospace;font-size:12px">' + f.name + '</div>';
+    h += '<div style="font-size:11px;color:'
+       + (f.rarity==='rare'?'#c060a0':f.rarity==='uncommon'?'#6090c8':'#70a060')
+       + '">' + f.rarity + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<button class="studybtn" id="catch-close-btn" style="width:100%;margin-top:8px">'
+     + 'Continue (+' + SESSION_XP_REWARD + ' XP saved to journal)</button>';
+  body.innerHTML = h;
+  ov.classList.add('open');
+
+  // Draw fish sprites
+  setTimeout(function(){
+    var fishImg = null;
+    try {
+      var tex = window.__phaserGame ? window.__phaserGame.scene.scenes[1].textures.get('fish_pack') : null;
+      if (tex) fishImg = tex.getSourceImage();
+    } catch(e){}
+    if (fishImg){
+      caught.forEach(function(f){
+        var canvas = document.getElementById('catchcanvas_' + f.id);
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(fishImg, f.gridX*32, f.gridY*32, 32, 32, 0, 0, 32, 32);
+      });
+    }
+    var btn = document.getElementById('catch-close-btn');
+    if (btn) btn.onclick = function(){
+      closeModal();
+      if (_modalScene) _modalScene.showToast('+' + SESSION_XP_REWARD + ' XP earned!');
+    };
+  }, 50);
+}
+
 function attachSkills(){
   // Tab switching
   var tabSkills   = document.getElementById('tab-skills');
   var tabJournal  = document.getElementById('tab-journal');
+  var tabFish     = document.getElementById('tab-fish');
   var panelSkills  = document.getElementById('skills-panel');
   var panelJournal = document.getElementById('journal-panel');
-  if (tabSkills && tabJournal){
-    tabSkills.onclick = function(){
-      tabSkills.classList.add('active'); tabJournal.classList.remove('active');
-      panelSkills.style.display = ''; panelJournal.style.display = 'none';
-    };
-    tabJournal.onclick = function(){
-      tabJournal.classList.add('active'); tabSkills.classList.remove('active');
-      panelJournal.style.display = ''; panelSkills.style.display = 'none';
-    };
+  var panelFish    = document.getElementById('fish-panel');
+  function showTab(active){
+    [tabSkills,tabJournal,tabFish].forEach(function(t){ if(t) t.classList.remove('active'); });
+    [panelSkills,panelJournal,panelFish].forEach(function(p){ if(p) p.style.display='none'; });
+    active.tab.classList.add('active');
+    active.panel.style.display = '';
+    if (active.onShow) active.onShow();
+  }
+  if (tabSkills){
+    tabSkills.onclick  = function(){ showTab({tab:tabSkills,  panel:panelSkills}); };
+    tabJournal.onclick = function(){ showTab({tab:tabJournal, panel:panelJournal}); };
+    if (tabFish) tabFish.onclick = function(){ showTab({tab:tabFish, panel:panelFish,
+      onShow: function(){ setTimeout(attachFishCanvases, 30); }}); };
   }
   // Start session buttons
   document.querySelectorAll('.studybtn:not(.disabled)').forEach(function(el){
@@ -428,9 +554,11 @@ function openStudyPromptFor(skillKey){
       body.innerHTML = '<p class="note">A session is already in progress. Finish it first.</p>';
       return;
     }
-    if (_modalScene && _modalScene.updateSessionBar) _modalScene.updateSessionBar();
     closeModal();
-    if (_modalScene) _modalScene.showToast('Session started! Come back in ' + SESSION_DURATION_MS/60000 + ' min.');
+    // Trigger animation (walk to water/bed, show tool, fade to black)
+    if (_modalScene && _modalScene.startSessionAnimation) _modalScene.startSessionAnimation(skillKey);
+    if (_modalScene && _modalScene.updateSessionBar) _modalScene.updateSessionBar();
+    if (_modalScene) _modalScene.showToast('Session started — focus and study!');
   };
 }
 
@@ -464,13 +592,24 @@ function openTakeawayModal(){
   submitBtn.onclick = function(){
     var text = (input.value || '').trim();
     if (!text){ input.style.border = '1px solid #c04040'; return; }
+    var skill = s.skill;
     var entry = sessionComplete(text);
     if (entry && _modalScene){
       addSkillXP(entry.skill, entry.xp, _modalScene);
       if (_modalScene.updateSessionBar) _modalScene.updateSessionBar();
-      _modalScene.showToast('+' + entry.xp + ' XP! Entry saved to journal.');
     }
-    closeModal();
+    // For fishing sessions, roll a fish catch and show it
+    if (skill === 'fishing' && typeof rollFishCatch === 'function'){
+      var caught = rollFishCatch();
+      // Save to state
+      if (!ST.fishCaught) ST.fishCaught = {};
+      caught.forEach(function(f){ ST.fishCaught[f.id] = (ST.fishCaught[f.id] || 0) + 1; });
+      saveState();
+      showFishCatchModal(caught);
+    } else {
+      closeModal();
+      if (_modalScene) _modalScene.showToast('+' + SESSION_XP_REWARD + ' XP! Entry saved to journal.');
+    }
   };
 }
 function customiseHTML(){

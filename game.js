@@ -41,7 +41,9 @@ function defaultState(){
     // Passive-study session in progress (null = none). Persists across reloads.
     session: null,    // { skill, study, startedAt, duration }
     // Journal of completed sessions. Each entry: { id, skill, study, takeaway, xp, timestamp }
-    journal: []
+    journal: [],
+    // Cumulative fish catch counts: { fishId: count, ... }
+    fishCaught: {}
   };
 }
 
@@ -55,6 +57,53 @@ function defaultState(){
 // rate alone. Mini-games grant larger chunks so the curve is reachable.
 
 var SKILL_MAX_LEVEL = 10;
+
+// ---- Fish definitions (16 fish from fish_pack.png, 32x32 grid) ----
+// Rarity: 'common' ~60% pool, 'uncommon' ~30%, 'rare' ~10%
+// Grid positions: row 0 = fish 0-6, row 1 = fish 7-13, row 2 = fish 14-15
+var FISH_DEFS = [
+  { id:'f0',  name:'Carp',           gridX:0, gridY:0, rarity:'common'   },
+  { id:'f1',  name:'Bass',           gridX:1, gridY:0, rarity:'common'   },
+  { id:'f2',  name:'Mackerel',       gridX:2, gridY:0, rarity:'common'   },
+  { id:'f3',  name:'Clownfish',      gridX:3, gridY:0, rarity:'uncommon' },
+  { id:'f4',  name:'Salmon',         gridX:4, gridY:0, rarity:'common'   },
+  { id:'f5',  name:'Striped Bass',   gridX:5, gridY:0, rarity:'uncommon' },
+  { id:'f6',  name:'Blue Tang',      gridX:6, gridY:0, rarity:'uncommon' },
+  { id:'f7',  name:'Trout',          gridX:0, gridY:1, rarity:'common'   },
+  { id:'f8',  name:'Perch',          gridX:1, gridY:1, rarity:'common'   },
+  { id:'f9',  name:'Angelfish',      gridX:2, gridY:1, rarity:'uncommon' },
+  { id:'f10', name:'Emperor Fish',   gridX:3, gridY:1, rarity:'rare'     },
+  { id:'f11', name:'Discus',         gridX:4, gridY:1, rarity:'rare'     },
+  { id:'f12', name:'Tuna',           gridX:5, gridY:1, rarity:'common'   },
+  { id:'f13', name:'Pufferfish',     gridX:6, gridY:1, rarity:'uncommon' },
+  { id:'f14', name:'Oarfish',        gridX:0, gridY:2, rarity:'rare'     },
+  { id:'f15', name:'Dragonfish',     gridX:1, gridY:2, rarity:'rare'     }
+];
+
+function rollFishCatch(){
+  // Roll 2-3 fish, weighted by rarity
+  var pool = [];
+  FISH_DEFS.forEach(function(f){
+    var weight = f.rarity === 'common' ? 6 : f.rarity === 'uncommon' ? 3 : 1;
+    for (var i = 0; i < weight; i++) pool.push(f);
+  });
+  var count = 2 + (Math.random() < 0.4 ? 1 : 0); // 60% chance of 2, 40% of 3
+  var caught = [];
+  var usedIdx = [];
+  for (var n = 0; n < count; n++){
+    var attempts = 0;
+    while (attempts < 20){
+      var idx = Math.floor(Math.random() * pool.length);
+      if (usedIdx.indexOf(pool[idx].id) === -1){
+        caught.push(pool[idx]);
+        usedIdx.push(pool[idx].id);
+        break;
+      }
+      attempts++;
+    }
+  }
+  return caught;
+}
 
 // Passive session length. Teacher-tunable — set to 60_000 (1 min) for testing.
 var SESSION_DURATION_MS = 15 * 60 * 1000;   // 15 minutes
@@ -294,19 +343,25 @@ function hslToRgb(h, s, l){
   return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
 }
 
-// Classify a pixel's body-part category. Returns 'hair'|'skin'|'clothes'|null.
-// Heuristics derived from the Player.png HSV clusters: dark pixels = hair,
-// warm peachy mid-V = skin, blue mid-saturation = clothes. Everything else
-// (eyes, shoes, leather, edge anti-alias) is left as-is.
+// Classify a pixel's body-part category for the _farmer_48x48.png sprite.
+// Returns 'hair'|'skin'|'clothes'|null.
+// Clusters from colour analysis of the sprite:
+//   Hair:    warm brown — hue 0.04-0.14, sat > 0.15, lum 0.12-0.52
+//   Skin:    warm peachy — hue < 0.08 or > 0.92, sat > 0.25, lum > 0.60
+//   Clothes: the teal/blue shirt (hue 0.48-0.62, sat > 0.08, lum > 0.25)
+//            + grey/white shirt body (sat < 0.12, lum > 0.55)
 function classifyPixel(r, g, b){
   var hsl = rgbToHsl(r, g, b);
   var hue = hsl[0], sat = hsl[1], lum = hsl[2];
-  // Hair = very dark (low luminance)
-  if (lum < 0.18) return 'hair';
-  // Skin = warm hue, mid-high luminance, low-mid saturation
-  if ((hue < 0.10 || hue > 0.92) && lum > 0.45 && sat > 0.10 && sat < 0.65) return 'skin';
-  // Clothes = blueish hue with reasonable saturation
-  if (hue >= 0.50 && hue <= 0.72 && sat > 0.18) return 'clothes';
+  // Skip near-black (shadow/outline pixels)
+  if (lum < 0.12) return null;
+  // Hair: warm brown, mid luminance
+  if (hue >= 0.04 && hue <= 0.14 && sat > 0.15 && lum >= 0.12 && lum <= 0.52) return 'hair';
+  // Skin: warm peachy, high luminance
+  if ((hue < 0.08 || hue > 0.92) && sat > 0.25 && lum > 0.60) return 'skin';
+  // Clothes: teal/blue shirt accent OR grey-white shirt body
+  if (hue >= 0.48 && hue <= 0.62 && sat > 0.08 && lum > 0.25) return 'clothes';
+  if (sat < 0.12 && lum > 0.55) return 'clothes';
   return null;
 }
 
@@ -344,17 +399,17 @@ function applyAppearance(scene){
 
     // Re-add the spritesheet frames so animations referencing numeric frames
     // (0..47) keep working after the texture swap.
+    // Farmer sprite: 48x96 frames (3 cols × 4 row-pairs = 12 frames)
     try {
       Phaser.Textures.Parsers.SpriteSheet(canvasTex, 0, 0, 0, W, H,
-        { frameWidth: 80, frameHeight: 80 });
+        { frameWidth: 48, frameHeight: 96 });
     } catch (e) {
-      // Fallback for older Phaser builds — slice the frames manually.
-      var cols = Math.floor(W / 80);
-      var rows = Math.floor(H / 80);
+      var cols = Math.floor(W / 48);
+      var rows = Math.floor(H / 96);
       var idx = 0;
       for (var ry = 0; ry < rows; ry++){
         for (var cx = 0; cx < cols; cx++){
-          canvasTex.add(idx, 0, cx*80, ry*80, 80, 80);
+          canvasTex.add(idx, 0, cx*48, ry*96, 48, 96);
           idx++;
         }
       }
@@ -428,6 +483,7 @@ function loadState(){
       }
       if (s.session !== undefined) ST.session = s.session;
       if (Array.isArray(s.journal)) ST.journal = s.journal;
+      if (s.fishCaught && typeof s.fishCaught === 'object') ST.fishCaught = s.fishCaught;
     }
   } catch(e){}
 }
@@ -577,7 +633,7 @@ var BootScene = new Phaser.Class({
 
     // Existing assets we still use
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
-    this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
+    this.load.spritesheet('player', A+'_farmer_48x48.png', { frameWidth:48, frameHeight:96 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('bee', A+'Bee_animation.png', { frameWidth:16, frameHeight:16 });
@@ -586,6 +642,9 @@ var BootScene = new Phaser.Class({
     this.load.spritesheet('leaves', A+'Leaves.png', { frameWidth:16, frameHeight:16 });
     this.load.image('seedling', A+'Hole_with_a_seedling.png');
     this.load.image('pondborder', A+'PondBorders.png'); // re-used as the well
+    // Fishing + botany tool assets
+    this.load.image('fish_pack', A+'fish_pack.png');
+    this.load.image('ts_tools',  A+'Tools_icons.png');
   },
   create: function(){
     // Strip the near-black background from the new RGB tilesheets so they composite
@@ -610,7 +669,8 @@ var BootScene = new Phaser.Class({
       self.textures.remove(k);
       self.textures.addCanvas(k, canvas);
     }
-    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants','ts_char_panel'].forEach(keyOut);
+    ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants','ts_char_panel','ts_tools','fish_pack'].forEach(keyOut);
+    keyOut('player');
 
     // Apply any saved character appearance to the player sprite before animations build
     applyAppearance(this);
@@ -627,6 +687,12 @@ var BootScene = new Phaser.Class({
 
 function buildAnimations(scene){
   var anims = scene.anims;
+  // Farmer sprite: 48x96px frames, 3 cols x 4 row-pairs (each direction spans 2 pixel rows).
+  // Phaser loads it as a spritesheet where each frame = 48x96, giving 12 frames total:
+  //   frames 0-2  = facing DOWN  (idle, walk1, walk2)
+  //   frames 3-5  = facing UP    (idle, walk1, walk2)
+  //   frames 6-8  = facing LEFT  (idle, walk1, walk2)
+  //   frames 9-11 = facing RIGHT (idle, walk1, walk2)
   function mk(key, frames, rate, repeat){
     if (!anims.exists(key))
       anims.create({ key:key,
@@ -634,13 +700,13 @@ function buildAnimations(scene){
         frameRate: rate, repeat: (repeat===undefined?-1:repeat) });
   }
   mk('idle-down',  [0], 1);
-  mk('walk-down',  [6,7,8,9,10,11], 9);
-  mk('idle-up',    [12], 1);
-  mk('walk-up',    [18,19,20,21,22,23], 9);
-  mk('idle-left',  [24], 1);
-  mk('walk-left',  [30,31,32,33,34,35], 9);
-  mk('idle-right', [36], 1);
-  mk('walk-right', [42,43,44,45,46,47], 9);
+  mk('walk-down',  [0,1,2], 7);
+  mk('idle-up',    [3], 1);
+  mk('walk-up',    [3,4,5], 7);
+  mk('idle-left',  [6], 1);
+  mk('walk-left',  [6,7,8], 7);
+  mk('idle-right', [9], 1);
+  mk('walk-right', [9,10,11], 7);
 
   if (!anims.exists('water-anim'))
     anims.create({ key:'water-anim',
@@ -700,6 +766,10 @@ var GardenScene = new Phaser.Class({
     } else {
       this.showToast('Welcome back!');
     }
+    // Initialise grass vibrancy based on current progress
+    this._lastVibrancyStage = -1;
+    this._vibrancyFlowers = [];
+    this.refreshGrassVibrancy();
   },
 
   // ============================================================
@@ -709,17 +779,32 @@ var GardenScene = new Phaser.Class({
     var TM = [];
     for (var r=0;r<MAP_H;r++){ TM.push([]); for (var c=0;c<MAP_W;c++) TM[r].push(T_GRASS); }
 
-    // ---- River + waterfall + pond ----
-    // Vertical river: cols 33-35 from the very top of the world (row 0) down to row 26.
-    // No waterfall cave entrance — the river simply continues off-screen to the north.
-    for (var r=0; r<=26; r++){
-      for (var c=33; c<=35; c++) TM[r][c] = T_WATER;
+    // ---- River — soft meander from top to bottom of map ----
+    // Centreline column is a smooth ease-in-out curve:
+    //   rows  0- 6: col 34 (exits top border — implies river flowing from off-screen north)
+    //   rows  6-12: curves right to col 36
+    //   rows 12-18: straight at col 36
+    //   rows 18-26: curves back left to col 33
+    // River is 3 tiles wide (centre ± 1). Cave stays at cols 36-38 rows 0-2, clear of water.
+    function riverCentreCol(r){
+      if (r <= 6) return 34.0;
+      if (r <= 12){ var t=(r-6)/6.0; t=t*t*(3-2*t); return 34.0 + t*2.0; }
+      if (r <= 18) return 36.0;
+      if (r <= 26){ var t=(r-18)/8.0; t=t*t*(3-2*t); return 36.0 - t*3.0; }
+      return 33.0;
     }
-    // Horizontal river across the bottom: cols 0-39 rows 27-29
+    for (var r=0; r<=26; r++){
+      var cx = riverCentreCol(r);
+      for (var offset=-1; offset<=1; offset++){
+        var c = Math.round(cx) + offset;
+        if (c >= 0 && c < MAP_W) TM[r][c] = T_WATER;
+      }
+    }
+    // Horizontal river across the bottom: rows 27-29 full width
     for (var r=27; r<=29; r++){
       for (var c=0; c<=39; c++) TM[r][c] = T_WATER;
     }
-    // Bottom-left pond (extends north of the bottom river, blending in)
+    // Bottom-left pond
     for (var rr=22; rr<=29; rr++){
       for (var cc=0; cc<=9; cc++){
         var d = Math.hypot((cc-4)*1.0, (rr-26)*1.1);
@@ -762,8 +847,9 @@ var GardenScene = new Phaser.Class({
     pathRect(25, 26, 16, 17);
 
     // Cave-side path (far bank, unreachable across river)
-    pathRect(37, 38,  3, 26);
-    pathRect(36, 38,  3,  4);
+    // River reaches col 37 in the meander middle, so cave path starts at col 38
+    pathRect(38, 39,  3, 26);
+    pathRect(37, 39,  3,  4);
 
     // ---- Perimeter paths around each garden bed (1 tile wide outside each bed) ----
     // North and south sides, then west and east sides. p() skips T_DIRT so the bed
@@ -1315,7 +1401,171 @@ var GardenScene = new Phaser.Class({
   // ============================================================
   //  GARDEN BEDS — spread out, no progress bar, wider crop grid
   // ============================================================
-  buildBeds: function(){
+  // ============================================================
+  //  GRASS VIBRANCY — progress-driven colour saturation + flower decorations
+  // ============================================================
+  // 8 vibrancy stages (0-7), driven by overall module + practical + quiz progress.
+  // Stage 0: slightly desaturated/pale (start of year)
+  // Stage 7: fully vivid, rich green with abundant flowers
+  // Ground canvas is retinted in-place each stage change.
+
+  computeVibrancyStage: function(){
+    // Weighted score: dot-point confidence (60%), practicals (20%), quizzes (20%)
+    var dpConf = overallConfidentPct();
+    var pr = 0; var prT = Object.keys(ST.pr).length;
+    Object.keys(ST.pr).forEach(function(k){ if(ST.pr[k]) pr++; });
+    var prPct = prT > 0 ? pr/prT : 0;
+    var qz = 0; var qzT = Object.keys(ST.qz).length;
+    Object.keys(ST.qz).forEach(function(k){ if(ST.qz[k]) qz++; });
+    var qzPct = qzT > 0 ? qz/qzT : 0;
+    var score = dpConf * 0.6 + prPct * 0.2 + qzPct * 0.2;
+    return Math.min(7, Math.floor(score * 8));
+  },
+
+  refreshGrassVibrancy: function(){
+    var stage = this.computeVibrancyStage();
+    if (stage === this._lastVibrancyStage) return;
+    this._lastVibrancyStage = stage;
+
+    // Tint the ground canvas: multiply each grass pixel's saturation and luminance
+    // by a stage-dependent factor. Stage 0 = 0.82 sat / 0.92 lum (slightly pale).
+    // Stage 7 = 1.10 sat / 1.05 lum (vivid). Linear interpolation between.
+    var satMult = 0.82 + stage * (1.10 - 0.82) / 7;
+    var lumMult = 0.92 + stage * (1.05 - 0.92) / 7;
+
+    var tex = this.textures.get('groundtex');
+    if (!tex || typeof tex.getContext !== 'function') return;
+    var ctx = tex.getContext();
+    var TM = this.TM;
+    var TS = TILE;
+
+    // Single readback of the entire canvas, then patch only T_GRASS pixels.
+    // This is far faster than ~800 individual getImageData/putImageData calls.
+    var fullW = WORLD_W, fullH = WORLD_H;
+    var imgd = ctx.getImageData(0, 0, fullW, fullH);
+    var d = imgd.data;
+
+    for (var r = 0; r < MAP_H; r++){
+      for (var c = 0; c < MAP_W; c++){
+        if (TM[r][c] !== T_GRASS) continue;
+        // Process all pixels in this tile's region of the canvas
+        for (var ty = 0; ty < TS; ty++){
+          for (var tx = 0; tx < TS; tx++){
+            var idx = ((r * TS + ty) * fullW + (c * TS + tx)) * 4;
+            if (d[idx+3] === 0) continue;
+            var hsl = rgbToHsl(d[idx], d[idx+1], d[idx+2]);
+            var newS = Math.min(1.0, hsl[1] * satMult);
+            var newL = Math.min(1.0, hsl[2] * lumMult);
+            var out = hslToRgb(hsl[0], newS, newL);
+            d[idx] = out[0]; d[idx+1] = out[1]; d[idx+2] = out[2];
+          }
+        }
+      }
+    }
+    ctx.putImageData(imgd, 0, 0);
+    tex.refresh();
+
+    // Update flower decorations to match vibrancy stage
+    this.refreshVibrancyFlowers(stage);
+  },
+
+  refreshVibrancyFlowers: function(stage){
+    // Destroy previous vibrancy flower group and rebuild for new stage
+    if (this._vibrancyFlowers){
+      this._vibrancyFlowers.forEach(function(f){ f.destroy(); });
+    }
+    this._vibrancyFlowers = [];
+    if (stage === 0) return;
+
+    var self = this;
+    var TM = this.TM;
+    var TS = TILE;
+
+    // Progressive flower/decoration sets — each stage adds more spots
+    // All spots are on T_GRASS tiles inside the farm fence
+    // Stage 1-2: sparse small flowers along fence lines
+    // Stage 3-4: wildflowers scattered in open areas
+    // Stage 5-6: dense patches near beds, mushroom clusters
+    // Stage 7: full bloom everywhere
+
+    // Flower types from Plants.png:
+    //   Small white flower: px(0, 416, 32, 16)  [row 13 col 0, half-tile height]
+    //   Daisy cluster:      px(32, 416, 32, 16)
+    //   Tall flower:        px(0, 352, 32, 32)  [row 11 col 0]
+    //   Tulip:              px(32, 352, 32, 32)
+    //   Small bush:         px(64, 352, 32, 32)
+    //   Mushroom:           from Details32 col 0 row 4
+
+    var FLOWER_SPOTS = [
+      // Stage 1+ (sparse, along paths and fence)
+      { c:5,  r:11, type:'small', minStage:1 },
+      { c:12, r:9,  type:'small', minStage:1 },
+      { c:18, r:16, type:'small', minStage:1 },
+      { c:22, r:9,  type:'small', minStage:1 },
+      { c:9,  r:17, type:'small', minStage:1 },
+      // Stage 2+
+      { c:11, r:12, type:'daisy', minStage:2 },
+      { c:15, r:9,  type:'daisy', minStage:2 },
+      { c:25, r:12, type:'daisy', minStage:2 },
+      { c:20, r:16, type:'daisy', minStage:2 },
+      { c:7,  r:14, type:'daisy', minStage:2 },
+      // Stage 3+
+      { c:13, r:13, type:'tall',  minStage:3 },
+      { c:19, r:8,  type:'tall',  minStage:3 },
+      { c:26, r:13, type:'tall',  minStage:3 },
+      { c:10, r:16, type:'tall',  minStage:3 },
+      { c:21, r:13, type:'tall',  minStage:3 },
+      // Stage 4+
+      { c:16, r:12, type:'tulip', minStage:4 },
+      { c:23, r:16, type:'tulip', minStage:4 },
+      { c:12, r:11, type:'tulip', minStage:4 },
+      { c:28, r:9,  type:'tulip', minStage:4 },
+      { c:17, r:17, type:'tulip', minStage:4 },
+      // Stage 5+ (bushes and mushrooms)
+      { c:14, r:14, type:'bush',  minStage:5 },
+      { c:22, r:12, type:'bush',  minStage:5 },
+      { c:8,  r:13, type:'mush',  minStage:5 },
+      { c:25, r:10, type:'mush',  minStage:5 },
+      { c:11, r:14, type:'mush',  minStage:5 },
+      // Stage 6+
+      { c:15, r:11, type:'small', minStage:6 },
+      { c:20, r:12, type:'daisy', minStage:6 },
+      { c:17, r:8,  type:'tall',  minStage:6 },
+      { c:24, r:14, type:'tulip', minStage:6 },
+      { c:13, r:16, type:'bush',  minStage:6 },
+      // Stage 7 (full bloom)
+      { c:16, r:16, type:'tall',  minStage:7 },
+      { c:19, r:13, type:'tulip', minStage:7 },
+      { c:23, r:11, type:'daisy', minStage:7 },
+      { c:14, r:8,  type:'small', minStage:7 },
+      { c:26, r:15, type:'mush',  minStage:7 }
+    ];
+
+    var FLOWER_DEFS = {
+      small: { key:'ts_plants', sx:0,   sy:416, sw:32, sh:16, dw:TILE*0.7,  dh:TILE*0.45 },
+      daisy: { key:'ts_plants', sx:32,  sy:416, sw:32, sh:16, dw:TILE*0.75, dh:TILE*0.45 },
+      tall:  { key:'ts_plants', sx:0,   sy:352, sw:32, sh:32, dw:TILE*0.8,  dh:TILE*0.9  },
+      tulip: { key:'ts_plants', sx:32,  sy:352, sw:32, sh:32, dw:TILE*0.8,  dh:TILE*0.9  },
+      bush:  { key:'ts_plants', sx:64,  sy:352, sw:32, sh:32, dw:TILE*1.0,  dh:TILE*0.9  },
+      mush:  { key:'ts_details',sx:0,   sy:128, sw:32, sh:32, dw:TILE*0.65, dh:TILE*0.65 }
+    };
+
+    FLOWER_SPOTS.forEach(function(spot){
+      if (spot.minStage > stage) return;
+      var c = spot.c, r = spot.r;
+      if (c < 0 || c >= MAP_W || r < 0 || r >= MAP_H) return;
+      if (TM[r][c] !== T_GRASS) return;
+      var fd = FLOWER_DEFS[spot.type];
+      if (!fd) return;
+      var wx = c * TS + TS/2;
+      var wy = r * TS + TS;
+      var spr = self._placeCropImage(fd.key, fd.sx, fd.sy, fd.sw, fd.sh,
+        wx, wy, fd.dw, fd.dh, wy);
+      self._vibrancyFlowers.push(spr);
+    });
+  },
+
+    buildBeds: function(){
     this.beds = [];
     var self = this;
     BED_DEFS.forEach(function(b){
@@ -1341,22 +1591,27 @@ var GardenScene = new Phaser.Class({
     bed.plants.removeAll(true);
     if (stage === 0) return;
 
-    // Lookup tile coords on Crops32 for this crop+stage
+    // Crops32 growth stages per crop row (col 0=seed, 1=sprout, 2=growing, 3=mature):
+    // Stage 1 → col 0 (seed, tiny)   stage 2 → col 1 (sprout)
+    // Stage 3 → col 2 (growing)      stage 4-5 → col 3 (mature)
     var cropPos = CROP_TILES[b.m][stage-1];
     var sx = cropPos[0] * 32, sy = cropPos[1] * 32;
 
-    // Dense grid: 4 cols x 4 rows = 16 plants per bed. Tighter spacing.
-    var cols = 4, rows = 4;
-    var marginX = 4, marginY = 4;
-    var usableW = bed.bw - marginX*2;
-    var usableH = bed.bh - marginY*2;
+    // Rendered size (px): seeds are tiny, mature plants fill most of a tile
+    // Stage: 1=seed(9px), 2=sprout(14px), 3=growing(20px), 4=mature(26px), 5=full(28px)
+    var SIZES = [0, 9, 14, 20, 26, 28];
+    var size = SIZES[stage] || 20;
+
+    // 3×3 grid = 9 plants. Neat, evenly spaced, not touching when mature.
+    var cols = 3, rows = 3;
+    var marginX = 10, marginY = 10;
+    var usableW = bed.bw - marginX * 2;
+    var usableH = bed.bh - marginY * 2;
     var stepX = usableW / (cols - 1);
     var stepY = usableH / (rows - 1);
-    // Smaller crops: stage 1 = 18px, stage 5 = 22px (well under TILE size)
-    var size = 18 + stage * 1.0;
 
-    // Slice the crop tile once and reuse
-    var tkey = 'crop_'+b.m+'_s'+stage;
+    // Slice the crop tile once and reuse per stage
+    var tkey = 'crop_' + b.m + '_s' + stage;
     if (!this.textures.exists(tkey)){
       var src = this.textures.get('ts_crops').getSourceImage();
       var cnv = this.textures.createCanvas(tkey, 32, 32);
@@ -1364,14 +1619,14 @@ var GardenScene = new Phaser.Class({
       cnv.refresh();
     }
 
-    for (var ri=0; ri<rows; ri++){
-      for (var ci=0; ci<cols; ci++){
-        // Slight jitter for a natural farm look (deterministic per cell)
-        var hh = ((b.c1+ci)*73 ^ (b.r1+ri)*131 ^ stage*17) >>> 0;
-        var jx = ((hh >>> 3) % 5) - 2;
-        var jy = ((hh >>> 7) % 5) - 2;
-        var px = bed.x1 + marginX + ci*stepX + jx;
-        var py = bed.y1 + marginY + ri*stepY + jy;
+    for (var ri = 0; ri < rows; ri++){
+      for (var ci = 0; ci < cols; ci++){
+        // Small deterministic jitter — only for non-seed stages so seeds look uniform
+        var hh = ((b.c1 + ci) * 73 ^ (b.r1 + ri) * 131 ^ stage * 17) >>> 0;
+        var jx = stage > 1 ? ((hh >>> 3) % 5) - 2 : 0;
+        var jy = stage > 1 ? ((hh >>> 7) % 5) - 2 : 0;
+        var px = bed.x1 + marginX + ci * stepX + jx;
+        var py = bed.y1 + marginY + ri * stepY + jy;
         var s = this.add.image(px, py, tkey).setOrigin(0.5, 0.5).setDisplaySize(size, size);
         bed.plants.add(s);
       }
@@ -1811,9 +2066,9 @@ var GardenScene = new Phaser.Class({
       { id:'tree',      label:'STUDY TREE — Quizzes',        cx: STUDY_TREE.c + STUDY_TREE.w/2, cy: STUDY_TREE.r + STUDY_TREE.h/2, r:3.5 },
       { id:'mailbox',   label:'NOTICEBOARD — Messages',      cx: NOTICEBOARD.c + 0.5, cy: NOTICEBOARD.r + 0.5, r:2.0 },
       { id:'cave',      label:'CAVE — Extension',            cx: CAVE.c + CAVE.w/2, cy: CAVE.r + CAVE.h/2, r:4.0 },
-      // Skills: pond triggers Fishing, each garden bed triggers Botany/Cultivation/Spelunking
-      // Pond centre approx (4, 25) in tile coords
-      { id:'skills',    label:'POND — Fishing skill',        cx: 4,  cy: 25, r:4.5,
+      // Skills: pond triggers Fishing — centre on east shore where player can walk
+      // (pond water occupies cols 0-8 rows 22-26; east shore walkable from col 8-12)
+      { id:'skills',    label:'POND — Fishing skill',        cx: 9,  cy: 23, r:3.5,
         _skillHint: 'fishing' },
       // M1 bed
       { id:'skills',    label:'M1 BED — Botany skill',       cx: BED_DEFS[0].c1 + (BED_DEFS[0].c2-BED_DEFS[0].c1)/2,
@@ -1849,12 +2104,17 @@ var GardenScene = new Phaser.Class({
     var o = this.nearObj();
     if (!o) return;
     if (o.id==='cave'){
-      // The cave is across the river; player can't physically reach it, but
-      // if the river is ever crossable this preserves the unlock.
       if (overallConfidentPct() < 0.75){
         this.showToast('The cave is locked — reach 75% confident dot points.');
         return;
       }
+    }
+    // For skills interactables, set skill hint so modal auto-opens the prompt
+    if (o.id === 'skills'){
+      var px = this.player.x / TILE, py = this.player.y / TILE;
+      var nearPond = Math.hypot(px - 4, py - 25) < 5.5;
+      var hint = o._skillHint || (nearPond ? 'fishing' : 'botany');
+      if (typeof _pendingSkillHint !== 'undefined') _pendingSkillHint = hint;
     }
     openModal(o.id, this);
   },
@@ -1904,27 +2164,37 @@ var GardenScene = new Phaser.Class({
     this.customBtn.on('pointerout',  function(){ self.customBtn.setScale(1.5); });
     this.customBtn.setScale(1.5);
 
-    // ---- Session timer bar (top of screen, only visible during active sessions) ----
-    var BAR_H = 38;
-    this.sessionBarBg = this.add.rectangle(0, 0, VIEW_W, BAR_H, 0x0a0804, 0.92)
-      .setOrigin(0,0).setScrollFactor(0).setDepth(99998).setStrokeStyle(2, 0xc8a860).setVisible(false);
-    this.sessionBarFill = this.add.rectangle(0, 0, 0, BAR_H, 0x4a8a48, 0.55)
-      .setOrigin(0,0).setScrollFactor(0).setDepth(99998).setVisible(false);
-    this.sessionBarLabel = this.add.text(14, 8, '', {
-      fontFamily:'monospace', fontSize:'14px', color:'#f0d060'
-    }).setScrollFactor(0).setDepth(99999).setVisible(false);
-    this.sessionBarTime = this.add.text(VIEW_W - 14, 8, '', {
-      fontFamily:'monospace', fontSize:'14px', color:'#f0d060'
-    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999).setVisible(false);
-    this.sessionBarCancel = this.add.text(VIEW_W - 110, 8, '[X] Cancel', {
-      fontFamily:'monospace', fontSize:'13px', color:'#e08070',
-      backgroundColor:'#3a1410', padding:{x:6,y:3}
-    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999).setVisible(false)
+    // (Top session bar removed — replaced by full-screen overlay + bottom bar)
+    // --- Full-screen black study overlay (shown during active session) ---
+    // Covers the game world so the student focuses on studying, not the game.
+    this.sessionOverlay = this.add.rectangle(VIEW_W/2, VIEW_H/2, VIEW_W, VIEW_H, 0x000000, 0)
+      .setScrollFactor(0).setDepth(90000).setVisible(false);
+
+    // Bottom progress bar (visible during session, sits above overlay)
+    var barY = VIEW_H - 36;
+    this.sessionBarBg2 = this.add.rectangle(VIEW_W/2, barY, VIEW_W - 40, 22, 0x1a1208)
+      .setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(91000).setVisible(false)
+      .setStrokeStyle(2, 0x6a5030);
+    this.sessionBarFill2 = this.add.rectangle(20, barY, 0, 18, 0x4a8a30)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(91001).setVisible(false);
+    this.sessionBarLabel2 = this.add.text(VIEW_W/2, barY - 22, '', {
+      fontFamily:'monospace', fontSize:'12px', color:'#c8a860'
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(91002).setVisible(false);
+    this.sessionBarTime2 = this.add.text(VIEW_W/2, barY + 22, '', {
+      fontFamily:'Press Start 2P', fontSize:'10px', color:'#f0d060'
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(91002).setVisible(false);
+    this.sessionBarCancel2 = this.add.text(VIEW_W - 20, barY, '[Cancel]', {
+      fontFamily:'monospace', fontSize:'12px', color:'#e08070',
+      backgroundColor:'#3a1410', padding:{x:6,y:4}
+    }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(91002).setVisible(false)
       .setInteractive({ useHandCursor:true });
     var selfHUD = this;
-    this.sessionBarCancel.on('pointerdown', function(){
+    this.sessionBarCancel2.on('pointerdown', function(){
       if (confirm('Cancel this session? No XP will be earned.')){
         sessionCancel();
+        if (selfHUD._fishingRod){ selfHUD._fishingRod.destroy(); selfHUD._fishingRod = null; }
+        if (selfHUD._fishingLine){ selfHUD._fishingLine.destroy(); selfHUD._fishingLine = null; }
+        if (selfHUD._toolOverlay){ selfHUD._toolOverlay.destroy(); selfHUD._toolOverlay = null; }
         selfHUD.updateSessionBar();
       }
     });
@@ -1933,36 +2203,126 @@ var GardenScene = new Phaser.Class({
 
   updateSessionBar: function(){
     var hasSession = ST && ST.session;
-    var visible = !!hasSession;
-    this.sessionBarBg.setVisible(visible);
-    this.sessionBarFill.setVisible(visible);
-    this.sessionBarLabel.setVisible(visible);
-    this.sessionBarTime.setVisible(visible);
-    this.sessionBarCancel.setVisible(visible);
-    if (!visible){
+    var barW = VIEW_W - 40;
+
+    if (!hasSession){
+      // Hide everything
+      this.sessionOverlay.setVisible(false).setAlpha(0);
+      this.sessionBarBg2.setVisible(false);
+      this.sessionBarFill2.setVisible(false);
+      this.sessionBarLabel2.setVisible(false);
+      this.sessionBarTime2.setVisible(false);
+      this.sessionBarCancel2.setVisible(false);
+      if (this._fishingRod){ this._fishingRod.destroy(); this._fishingRod = null; }
+      if (this._fishingLine){ this._fishingLine.destroy(); this._fishingLine = null; }
+      if (this._toolOverlay){ this._toolOverlay.destroy(); this._toolOverlay = null; }
       this._takeawayPrompted = false;
       return;
     }
+
+    // Show overlay (fade in on first call)
+    if (!this.sessionOverlay.visible){
+      this.sessionOverlay.setVisible(true).setAlpha(0);
+      this.tweens.add({ targets: this.sessionOverlay, alpha: 0.92, duration: 800, ease:'Linear' });
+    }
+    this.sessionBarBg2.setVisible(true);
+    this.sessionBarFill2.setVisible(true);
+    this.sessionBarLabel2.setVisible(true);
+    this.sessionBarTime2.setVisible(true);
+    this.sessionBarCancel2.setVisible(true);
+
     var cfg = CONFIG_SKILLS[ST.session.skill];
-    var label = (cfg ? cfg.activityLabel : ST.session.skill);
-    // Truncate the study sentence for the bar so it fits
     var study = ST.session.study || '';
-    if (study.length > 50) study = study.substring(0, 47) + '...';
-    this.sessionBarLabel.setText(label + ' \u2014 "' + study + '"');
+    if (study.length > 60) study = study.substring(0, 57) + '...';
+    this.sessionBarLabel2.setText((cfg ? cfg.activityLabel : ST.session.skill) + '  —  “' + study + '”');
+
     var remaining = sessionRemainingMs();
     var totalMs = ST.session.duration;
     var pct = 1 - (remaining / totalMs);
-    this.sessionBarFill.width = VIEW_W * pct;
-    // Time display
+    this.sessionBarFill2.width = barW * pct;
+
     var m = Math.floor(remaining / 60000);
     var s = Math.floor((remaining % 60000) / 1000);
     var pad = s < 10 ? '0' : '';
-    this.sessionBarTime.setText(m + ':' + pad + s);
-    // When the session expires, auto-prompt the takeaway modal exactly once.
+    this.sessionBarTime2.setText(m + ':' + pad + s + ' remaining');
+
+    // Trigger takeaway modal when done
     if (remaining === 0 && !this._takeawayPrompted && !modalIsOpen()){
       this._takeawayPrompted = true;
       openModal('takeaway', this);
     }
+  },
+
+  // Called when a study session starts — walk player to nearest activity spot,
+  // show fishing rod or watering can, then fade to black.
+  startSessionAnimation: function(skillKey){
+    var self = this;
+    var px = this.player.x, py = this.player.y;
+
+    // Fishing: move player to nearest pond edge
+    if (skillKey === 'fishing'){
+      // Find nearest water-adjacent grass tile in the pond area
+      var targetX = 10 * TILE + TILE/2;  // east shore of pond, facing water (west)
+      var targetY = 24 * TILE + TILE/2;
+      this.player.x = targetX;
+      this.player.y = targetY;
+      this.player.anims.play('idle-left', true);
+
+      // Draw fishing rod procedurally (Graphics overlay on player)
+      var rodG = this.add.graphics().setScrollFactor(1).setDepth(this.player.depth + 1);
+      // Rod: a line from player's hand extending left and up
+      rodG.lineStyle(2, 0x8b5a2b, 1);
+      rodG.beginPath();
+      rodG.moveTo(targetX - 8, targetY - 20);
+      rodG.lineTo(targetX - 28, targetY - 46);
+      rodG.strokePath();
+      // Line: thin line from rod tip down to water
+      rodG.lineStyle(1, 0xd4c090, 0.9);
+      rodG.beginPath();
+      rodG.moveTo(targetX - 28, targetY - 46);
+      rodG.lineTo(targetX - 38, targetY - 12);
+      rodG.strokePath();
+      // Bobber: small circle at line end
+      rodG.fillStyle(0xc04040, 1);
+      rodG.fillCircle(targetX - 38, targetY - 12, 3);
+      this._fishingRod = rodG;
+
+    } else if (skillKey === 'botany'){
+      // Move player to nearest bed
+      var nearBed = null, nearDist = Infinity;
+      BED_DEFS.forEach(function(b){
+        var bx = (b.c1 + (b.c2 - b.c1)/2) * TILE;
+        var by = b.r1 * TILE - TILE/2;
+        var d = Math.hypot(px - bx, py - by);
+        if (d < nearDist){ nearDist = d; nearBed = b; }
+      });
+      if (nearBed){
+        this.player.x = (nearBed.c1 + (nearBed.c2 - nearBed.c1)/2) * TILE;
+        this.player.y = (nearBed.r1 - 1) * TILE + TILE/2;
+      }
+      this.player.anims.play('idle-down', true);
+
+      // Watering can overlay from Tools_icons.png px(0,32,32,32)
+      if (this.textures.exists('ts_tools')){
+        var tcanKey = 'watering_can_crop';
+        if (!this.textures.exists(tcanKey)){
+          var src = this.textures.get('ts_tools').getSourceImage();
+          var cnv = this.textures.createCanvas(tcanKey, 32, 32);
+          cnv.getContext().drawImage(src, 0, 32, 32, 32, 0, 0, 32, 32);
+          cnv.refresh();
+        }
+        var tc = this.add.image(this.player.x + 14, this.player.y - 14, tcanKey)
+          .setDisplaySize(24, 24).setDepth(this.player.depth + 1).setScrollFactor(1);
+        this._toolOverlay = tc;
+      }
+    }
+
+    // Fade to black after a short delay showing the animation
+    var overlay = this.sessionOverlay;
+    this.time.delayedCall(600, function(){
+      overlay.setVisible(true).setAlpha(0);
+      self.tweens.add({ targets: overlay, alpha: 0.92, duration: 700, ease:'Linear' });
+    });
   },
 
   showToast: function(msg){
@@ -2002,6 +2362,8 @@ var GardenScene = new Phaser.Class({
     }
     // Update sun-shadow every ~5 seconds (300 frames at 60fps).
     if (this.fc % 300 === 0 && this.refreshSunShadow) this.refreshSunShadow();
+    // Refresh grass vibrancy every 10 seconds
+    if (this.fc % 600 === 0) this.refreshGrassVibrancy();
   }
 });
 
