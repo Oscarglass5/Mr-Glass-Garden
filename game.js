@@ -376,6 +376,9 @@ function classifyPixel(r, g, b){
 //  canvas updates — the bug behind earlier failed attempts.)
 function applyAppearance(scene){
   if (!ST || !ST.appearance) return;
+  // Skip entirely if no colours have been chosen — avoids unnecessary texture rebuild
+  var ap = ST.appearance;
+  if (!ap.hair && !ap.skin && !ap.clothes) return;
 
   // FIRST CALL: stash original, replace 'player' with a CanvasTexture.
   if (!scene.textures.exists('player_src')){
@@ -402,18 +405,18 @@ function applyAppearance(scene){
     // Frame size depends on which sprite is loaded
     var FW = (_useNewSprite) ? 48 : 80;
     var FH = (_useNewSprite) ? 96 : 80;
+    // Register frames: try Parsers first, always follow with explicit frame loop
+    // to guarantee frames exist even if Parsers silently fails.
     try {
       Phaser.Textures.Parsers.SpriteSheet(canvasTex, 0, 0, 0, W, H,
         { frameWidth: FW, frameHeight: FH });
-    } catch (e) {
-      var cols = Math.floor(W / FW);
-      var rows = Math.floor(H / FH);
-      var idx = 0;
-      for (var ry = 0; ry < rows; ry++){
-        for (var cx = 0; cx < cols; cx++){
-          canvasTex.add(idx, 0, cx*FW, ry*FH, FW, FH);
-          idx++;
-        }
+    } catch (e) {}
+    // Explicit frame registration (idempotent: existing frames are overwritten cleanly)
+    var fc2 = 0;
+    for (var ry = 0; ry < Math.floor(H / FH); ry++){
+      for (var cx = 0; cx < Math.floor(W / FW); cx++){
+        canvasTex.add(fc2, 0, cx*FW, ry*FH, FW, FH);
+        fc2++;
       }
     }
   }
@@ -706,11 +709,10 @@ var BootScene = new Phaser.Class({
       keyOut('player');
     }
 
-    // Apply any saved character appearance to the player sprite before animations build
-    applyAppearance(this);
-
     _useNewSprite = self._useNewSprite || false;
     buildAnimations(this);
+    // Apply appearance AFTER animations are built so the texture already has valid frames
+    applyAppearance(this);
     this.scene.start('Garden');
 
     // Signal the splash overlay that everything is loaded — enables ENTER button.
