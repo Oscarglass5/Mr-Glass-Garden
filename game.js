@@ -669,7 +669,7 @@ var BootScene = new Phaser.Class({
       self.textures.addCanvas(k, canvas);
     }
     ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants','ts_char_panel','ts_tools','fish_pack'].forEach(keyOut);
-    keyOut('player');
+    // NOTE: Player.png is RGBA — do NOT run keyOut on it, that strips frames.
 
     buildAnimations(this);
     applyAppearance(this);
