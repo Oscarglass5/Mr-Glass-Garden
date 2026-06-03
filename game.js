@@ -395,20 +395,15 @@ function applyAppearance(scene){
     canvasTex.getContext().drawImage(origImg, 0, 0);
     canvasTex.refresh();
 
-    // Re-add the spritesheet frames so animations referencing numeric frames
-    // (0..47) keep working after the texture swap.
-    // Player.png: 80x80 frames (6 cols x 8 rows = 48 frames)
+    // Register spritesheet frames on the canvas texture.
+    // Player.png: 80x80 frames, 6 cols x 8 rows = 48 frames.
+    // Do NOT use Phaser.Textures.Parsers.SpriteSheet here — it expects an image-backed
+    // texture and crashes with "this.data.sourceSize" on a CanvasTexture.
+    // Use canvasTex.add() directly instead.
     var FW = 80, FH = 80;
-    try {
-      Phaser.Textures.Parsers.SpriteSheet(canvasTex, 0, 0, 0, W, H,
-        { frameWidth: FW, frameHeight: FH });
-    } catch (e) {}
-    // Always explicitly register frames as a belt-and-suspenders guarantee
-    var fc2 = 0;
     for (var ry = 0; ry < Math.floor(H / FH); ry++){
       for (var cx = 0; cx < Math.floor(W / FW); cx++){
-        canvasTex.add(fc2, 0, cx*FW, ry*FH, FW, FH);
-        fc2++;
+        canvasTex.add(ry * Math.floor(W/FW) + cx, 0, cx*FW, ry*FH, FW, FH);
       }
     }
   }
