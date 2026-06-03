@@ -399,17 +399,19 @@ function applyAppearance(scene){
 
     // Re-add the spritesheet frames so animations referencing numeric frames
     // (0..47) keep working after the texture swap.
-    // Farmer sprite: 48x96 frames (3 cols × 4 row-pairs = 12 frames)
+    // Frame size depends on which sprite is loaded
+    var FW = (_useNewSprite) ? 48 : 80;
+    var FH = (_useNewSprite) ? 96 : 80;
     try {
       Phaser.Textures.Parsers.SpriteSheet(canvasTex, 0, 0, 0, W, H,
-        { frameWidth: 48, frameHeight: 96 });
+        { frameWidth: FW, frameHeight: FH });
     } catch (e) {
-      var cols = Math.floor(W / 48);
-      var rows = Math.floor(H / 96);
+      var cols = Math.floor(W / FW);
+      var rows = Math.floor(H / FH);
       var idx = 0;
       for (var ry = 0; ry < rows; ry++){
         for (var cx = 0; cx < cols; cx++){
-          canvasTex.add(idx, 0, cx*48, ry*96, 48, 96);
+          canvasTex.add(idx, 0, cx*FW, ry*FH, FW, FH);
           idx++;
         }
       }
@@ -633,7 +635,9 @@ var BootScene = new Phaser.Class({
 
     // Existing assets we still use
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
-    this.load.spritesheet('player', A+'_farmer_48x48.png', { frameWidth:48, frameHeight:96 });
+    // Load new farmer sprite as 'player_new' — fall back to Player.png if not yet uploaded
+    this.load.spritesheet('player',     A+'Player.png',          { frameWidth:80, frameHeight:80 });
+    this.load.spritesheet('player_new', A+'_farmer_48x48.png',   { frameWidth:48, frameHeight:96 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('bee', A+'Bee_animation.png', { frameWidth:16, frameHeight:16 });
@@ -670,11 +674,42 @@ var BootScene = new Phaser.Class({
       self.textures.addCanvas(k, canvas);
     }
     ['ts_buildings','ts_details','ts_crops','ts_terrainA5','ts_terrainEx','ts_orchard','ts_plants','ts_char_panel','ts_tools','fish_pack'].forEach(keyOut);
-    keyOut('player');
+
+    // Detect whether the new farmer sprite loaded successfully.
+    // If yes: swap it to the 'player' key and use 48x96 animations.
+    // If no (404 — not yet uploaded): keep Player.png with original 80x80 animations.
+    var newTex = self.textures.get('player_new');
+    var newSrc = null;
+    try { newSrc = newTex ? newTex.getSourceImage() : null; } catch(e){}
+    var newLoaded = !!(newSrc && newSrc.width && newSrc.width > 10 && newSrc.height > 10 && newTex.key !== '__MISSING');
+    self._useNewSprite = newLoaded;
+    if (newLoaded){
+      // Replace 'player' with the keyed-out new farmer texture + re-register frames
+      keyOut('player_new');
+      var newSrcKeyed = self.textures.get('player_new').getSourceImage();
+      self.textures.remove('player');
+      var playerTex = self.textures.createCanvas('player', newSrcKeyed.width, newSrcKeyed.height);
+      playerTex.getContext().drawImage(newSrcKeyed, 0, 0);
+      // Register 48x96 frames so generateFrameNumbers works
+      try {
+        Phaser.Textures.Parsers.SpriteSheet(playerTex, 0, 0, 0, newSrcKeyed.width, newSrcKeyed.height,
+          { frameWidth: 48, frameHeight: 96 });
+      } catch(e){
+        var fc = 0;
+        for (var ry2=0; ry2<Math.floor(newSrcKeyed.height/96); ry2++)
+          for (var cx2=0; cx2<Math.floor(newSrcKeyed.width/48); cx2++)
+            playerTex.add(fc++, 0, cx2*48, ry2*96, 48, 96);
+      }
+      playerTex.refresh();
+      self.textures.remove('player_new');
+    } else {
+      keyOut('player');
+    }
 
     // Apply any saved character appearance to the player sprite before animations build
     applyAppearance(this);
 
+    _useNewSprite = self._useNewSprite || false;
     buildAnimations(this);
     this.scene.start('Garden');
 
@@ -685,28 +720,40 @@ var BootScene = new Phaser.Class({
   }
 });
 
+// Global flag set by BootScene to tell buildAnimations which sprite loaded
+var _useNewSprite = false;
+
 function buildAnimations(scene){
   var anims = scene.anims;
-  // Farmer sprite: 48x96px frames, 3 cols x 4 row-pairs (each direction spans 2 pixel rows).
-  // Phaser loads it as a spritesheet where each frame = 48x96, giving 12 frames total:
-  //   frames 0-2  = facing DOWN  (idle, walk1, walk2)
-  //   frames 3-5  = facing UP    (idle, walk1, walk2)
-  //   frames 6-8  = facing LEFT  (idle, walk1, walk2)
-  //   frames 9-11 = facing RIGHT (idle, walk1, walk2)
+  var useNew = scene._useNewSprite || _useNewSprite;
   function mk(key, frames, rate, repeat){
     if (!anims.exists(key))
       anims.create({ key:key,
         frames: anims.generateFrameNumbers('player', { frames:frames }),
         frameRate: rate, repeat: (repeat===undefined?-1:repeat) });
   }
-  mk('idle-down',  [0], 1);
-  mk('walk-down',  [0,1,2], 7);
-  mk('idle-up',    [3], 1);
-  mk('walk-up',    [3,4,5], 7);
-  mk('idle-left',  [6], 1);
-  mk('walk-left',  [6,7,8], 7);
-  mk('idle-right', [9], 1);
-  mk('walk-right', [9,10,11], 7);
+  if (useNew){
+    // New farmer sprite: 48x96px, 12 frames (3 cols x 4 direction row-pairs)
+    //   frames 0-2=DOWN, 3-5=UP, 6-8=LEFT, 9-11=RIGHT
+    mk('idle-down',  [0], 1);
+    mk('walk-down',  [0,1,2], 7);
+    mk('idle-up',    [3], 1);
+    mk('walk-up',    [3,4,5], 7);
+    mk('idle-left',  [6], 1);
+    mk('walk-left',  [6,7,8], 7);
+    mk('idle-right', [9], 1);
+    mk('walk-right', [9,10,11], 7);
+  } else {
+    // Original Player.png: 80x80, 48 frames (6 cols x 8 rows)
+    mk('idle-down',  [0], 1);
+    mk('walk-down',  [6,7,8,9,10,11], 9);
+    mk('idle-up',    [12], 1);
+    mk('walk-up',    [18,19,20,21,22,23], 9);
+    mk('idle-left',  [24], 1);
+    mk('walk-left',  [30,31,32,33,34,35], 9);
+    mk('idle-right', [36], 1);
+    mk('walk-right', [42,43,44,45,46,47], 9);
+  }
 
   if (!anims.exists('water-anim'))
     anims.create({ key:'water-anim',
