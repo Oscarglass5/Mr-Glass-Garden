@@ -627,7 +627,6 @@ var BootScene = new Phaser.Class({
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
     // Teacher NPC sprite (extracted from the teacher spritesheet, 55x65 cells, 7 cols x 4 rows)
-    this.load.spritesheet('teacher_npc', A+'teacher_npc.png', { frameWidth:55, frameHeight:65 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('bee', A+'Bee_animation.png', { frameWidth:16, frameHeight:16 });
@@ -695,23 +694,6 @@ function buildAnimations(scene){
   mk('idle-right', [36], 1);
   mk('walk-right', [42,43,44,45,46,47], 9);
 
-  // Teacher NPC: teacher_npc.png, 55x65px, 7 cols x 4 rows = 28 frames
-  // Row 0=DOWN, Row 1=LEFT, Row 2=RIGHT, Row 3=UP
-  // Cols 0-2 = idle variants, cols 3-6 = walk frames
-  function mkT(key, frames, rate, repeat){
-    if (!anims.exists(key))
-      anims.create({ key:key,
-        frames: anims.generateFrameNumbers('teacher_npc', { frames:frames }),
-        frameRate: rate, repeat: (repeat===undefined?-1:repeat) });
-  }
-  mkT('t-idle-down',  [0], 1);
-  mkT('t-walk-down',  [3,4,5,6], 8);
-  mkT('t-idle-left',  [7], 1);
-  mkT('t-walk-left',  [10,11,12,13], 8);
-  mkT('t-idle-right', [14], 1);
-  mkT('t-walk-right', [17,18,19,20], 8);
-  mkT('t-idle-up',    [21], 1);
-  mkT('t-walk-up',    [24,25,26,27], 8);
 
   if (!anims.exists('water-anim'))
     anims.create({ key:'water-anim',
@@ -2006,16 +1988,13 @@ var GardenScene = new Phaser.Class({
     this.farmerIdx = 0;
     var start = this.farmerRoute[0];
 
-    // Use teacher_npc sprite if loaded, otherwise fall back to tinted player sprite
-    var npcKey = this.textures.exists('teacher_npc') ? 'teacher_npc' : 'player';
-    var f = this.add.sprite(start.x, start.y, npcKey, 0);
+    var f = this.add.sprite(start.x, start.y, 'player', 0);
     f.setOrigin(0.5, 0.85);
     f.setDepth(f.y);
-    f.setScale(1.1);   // slightly larger than the student player
-    if (npcKey === 'player') f.setTint(0xf4c87a);  // fallback tint only
+    f.setTint(0xf4c87a);
     f.facing = 'down';
-    f.npcKey = npcKey;
-    f.play(npcKey === 'teacher_npc' ? 't-idle-down' : 'idle-down');
+    f.npcKey = 'player';
+    f.play('idle-down');
     this.farmer = f;
     this.farmerSpd = 55;       // pixels per second
     this.farmerPause = 0;
@@ -2031,7 +2010,7 @@ var GardenScene = new Phaser.Class({
       var face = Math.abs(pdx) > Math.abs(pdy)
         ? (pdx<0 ? 'left' : 'right')
         : (pdy<0 ? 'up' : 'down');
-      var nearKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + face;
+      var nearKey = 'idle-' + face;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==nearKey) f.play(nearKey);
       f.facing = face;
       f.setDepth(f.y);
@@ -2039,7 +2018,7 @@ var GardenScene = new Phaser.Class({
     }
     if (this.farmerPause > 0){
       this.farmerPause -= dtMs;
-      var idleKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing;
+      var idleKey = 'idle-' + f.facing;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==idleKey) f.play(idleKey);
       return;
     }
@@ -2050,7 +2029,7 @@ var GardenScene = new Phaser.Class({
       // Arrived — pause briefly then advance
       this.farmerPause = 1200 + Math.random()*900;
       f.facing = wp.face || 'down';
-      f.play((f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing);
+      f.play('idle-' + f.facing);
       this.farmerIdx = (this.farmerIdx + 1) % this.farmerRoute.length;
       return;
     }
@@ -2062,7 +2041,7 @@ var GardenScene = new Phaser.Class({
       ? (dx<0 ? 'left' : 'right')
       : (dy<0 ? 'up' : 'down');
     if (face !== f.facing){ f.facing = face; }
-    var anim = (f.npcKey==='teacher_npc' ? 't-walk-' : 'walk-') + face;
+    var anim = 'walk-' + face;
     if (f.anims.currentAnim===null || f.anims.currentAnim.key!==anim) f.play(anim, true);
     f.setDepth(f.y);
   },

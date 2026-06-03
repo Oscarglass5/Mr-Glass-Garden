@@ -612,56 +612,59 @@ function openTakeawayModal(){
     }
   };
 }
+var CHAR_DEFS = [
+  { key:'player',  label:'Default',     desc:'Original student' },
+  { key:'char1',   label:'Character 1', desc:'Blue jacket' },
+  { key:'char2',   label:'Character 2', desc:'Orange hair' },
+  { key:'char3',   label:'Character 3', desc:'Dark uniform' }
+];
+
 function customiseHTML(){
-  var ap = ST.appearance || { hair:null, skin:null, clothes:null, eyes:null };
-  function swatchRow(label, key, palette){
-    var current = ap[key];
-    var html = '<div class="charrow"><div class="charlabel">'+label+'</div><div class="swatches">';
-    html += '<button class="swatch reset'+(current===null?' sel':'')+'" data-cat="'+key+'" data-hex="reset" title="Default"></button>';
-    palette.forEach(function(c){
-      var isSel = (current === c.hex);
-      html += '<button class="swatch'+(isSel?' sel':'')+'" '
-            + 'data-cat="'+key+'" data-hex="'+c.hex+'" '
-            + 'style="background:'+c.hex+'" title="'+c.name+'"></button>';
-    });
-    html += '</div></div>';
-    return html;
-  }
-  var h = '<p class="note" style="font-size:12px;line-height:1.55">'
-        + 'Pick colours for your character. The original sprite shading is preserved.</p>';
-  h += '<div class="charbox">';
-  h += swatchRow('HAIR',    'hair',    CHAR_PALETTES.hair);
-  h += swatchRow('SKIN',    'skin',    CHAR_PALETTES.skin);
-  h += swatchRow('CLOTHES', 'clothes', CHAR_PALETTES.clothes);
-  h += swatchRow('EYES',    'eyes',    CHAR_PALETTES.eyes);
-  h += '</div>';
-  h += '<div class="charactions"><button class="resetbtn" id="char-reset">Reset to default</button></div>';
+  var cur=(ST.appearance&&ST.appearance.character)||'player';
+  var h='<p class="note" style="font-size:12px;line-height:1.6">Choose your character.</p>';
+  h+='<div class="char-picker">';
+  CHAR_DEFS.forEach(function(cd){
+    var sel=cur===cd.key;
+    h+='<div class="char-option'+(sel?' selected':'')+'" data-charkey="'+cd.key+'">';
+    h+='<canvas class="char-preview" id="charcanvas_'+cd.key+'" width="32" height="32" '
+      +'style="image-rendering:pixelated;width:64px;height:64px;display:block;margin:0 auto 6px;"></canvas>';
+    h+='<div class="char-label">'+cd.label+'</div>';
+    h+='<div class="char-desc">'+cd.desc+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
   return h;
 }
+
+
 function attachCustomise(){
-  document.querySelectorAll('.swatch').forEach(function(el){
-    el.onclick = function(){
-      var cat = el.dataset.cat, hex = el.dataset.hex;
-      ST.appearance[cat] = (hex === 'reset') ? null : hex;
+  setTimeout(function(){
+    CHAR_DEFS.forEach(function(cd){
+      var canvas=document.getElementById('charcanvas_'+cd.key);
+      if(!canvas||!_modalScene) return;
+      try {
+        var tex=_modalScene.textures.get(cd.key);
+        if(!tex) return;
+        var src=tex.getSourceImage();
+        if(!src||!src.width) return;
+        var ctx=canvas.getContext('2d');
+        ctx.imageSmoothingEnabled=false;
+        if(cd.key==='player') ctx.drawImage(src,0,0,80,80,0,0,32,32);
+        else ctx.drawImage(src,32,0,32,32,0,0,32,32);
+      } catch(e){}
+    });
+  }, 30);
+  document.querySelectorAll('.char-option').forEach(function(el){
+    el.onclick=function(){
+      var key=el.dataset.charkey;
+      if(!ST.appearance) ST.appearance={};
+      ST.appearance.character=key;
       saveState();
-      // Re-apply to the player sprite immediately. The texture's underlying
-      // canvas is repainted in place; refresh() handles the GPU upload.
-      if (_modalScene && typeof applyAppearance === 'function'){
-        applyAppearance(_modalScene);
-      }
-      // Refresh the panel to show the new selection state
-      document.getElementById('modal-body').innerHTML = customiseHTML();
+      if(_modalScene&&_modalScene.swapPlayerCharacter) _modalScene.swapPlayerCharacter(key);
+      document.getElementById('modal-body').innerHTML=customiseHTML();
       attachCustomise();
     };
   });
-  var reset = document.getElementById('char-reset');
-  if (reset) reset.onclick = function(){
-    ST.appearance = { hair:null, skin:null, clothes:null, eyes:null };
-    saveState();
-    if (_modalScene && typeof applyAppearance === 'function'){
-      applyAppearance(_modalScene);
-    }
-    document.getElementById('modal-body').innerHTML = customiseHTML();
-    attachCustomise();
-  };
 }
+
+
