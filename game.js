@@ -370,73 +370,7 @@ function classifyPixel(r, g, b){
 // (addSpriteSheet creates a regular Texture whose refresh() is a no-op for
 //  canvas updates — the bug behind earlier failed attempts.)
 function applyAppearance(scene){
-  if (!ST || !ST.appearance) return;
-  // Skip entirely if no colours have been chosen — avoids unnecessary texture rebuild
-  var ap = ST.appearance;
-  if (!ap.hair && !ap.skin && !ap.clothes) return;
-
-  // FIRST CALL: stash original, replace 'player' with a CanvasTexture.
-  if (!scene.textures.exists('player_src')){
-    var origTex = scene.textures.get('player');
-    if (!origTex) return;
-    var origImg = origTex.getSourceImage();
-    if (!origImg || !origImg.width) return;
-    var W = origImg.width, H = origImg.height;
-
-    // Stash a copy of the untouched original as a normal texture for resets
-    var srcCnv = document.createElement('canvas');
-    srcCnv.width = W; srcCnv.height = H;
-    srcCnv.getContext('2d').drawImage(origImg, 0, 0);
-    scene.textures.addCanvas('player_src', srcCnv);
-
-    // Replace 'player' with a CanvasTexture (this one has a real refresh())
-    scene.textures.remove('player');
-    var canvasTex = scene.textures.createCanvas('player', W, H);
-    canvasTex.getContext().drawImage(origImg, 0, 0);
-    canvasTex.refresh();
-
-    // Register spritesheet frames on the canvas texture.
-    // Player.png: 80x80 frames, 6 cols x 8 rows = 48 frames.
-    // Do NOT use Phaser.Textures.Parsers.SpriteSheet here — it expects an image-backed
-    // texture and crashes with "this.data.sourceSize" on a CanvasTexture.
-    // Use canvasTex.add() directly instead.
-    var FW = 80, FH = 80;
-    for (var ry = 0; ry < Math.floor(H / FH); ry++){
-      for (var cx = 0; cx < Math.floor(W / FW); cx++){
-        canvasTex.add(ry * Math.floor(W/FW) + cx, 0, cx*FW, ry*FH, FW, FH);
-      }
-    }
-  }
-
-  // REPAINT: pull original pixels, recolor, push to the live canvas.
-  var tex = scene.textures.get('player');
-  if (!tex || typeof tex.getContext !== 'function') return;
-  var ctx = tex.getContext();
-  var srcImg = scene.textures.get('player_src').getSourceImage();
-  ctx.clearRect(0, 0, tex.width, tex.height);
-  ctx.drawImage(srcImg, 0, 0);
-
-  var ap = ST.appearance;
-  if (ap.hair || ap.skin || ap.clothes){
-    var imgd = ctx.getImageData(0, 0, tex.width, tex.height);
-    var d = imgd.data;
-    var targets = {
-      hair:    ap.hair    ? rgbToHsl(hexToRgb(ap.hair).r,    hexToRgb(ap.hair).g,    hexToRgb(ap.hair).b)    : null,
-      skin:    ap.skin    ? rgbToHsl(hexToRgb(ap.skin).r,    hexToRgb(ap.skin).g,    hexToRgb(ap.skin).b)    : null,
-      clothes: ap.clothes ? rgbToHsl(hexToRgb(ap.clothes).r, hexToRgb(ap.clothes).g, hexToRgb(ap.clothes).b) : null
-    };
-    for (var i=0; i<d.length; i+=4){
-      if (d[i+3] === 0) continue;
-      var part = classifyPixel(d[i], d[i+1], d[i+2]);
-      if (!part || !targets[part]) continue;
-      var origHsl = rgbToHsl(d[i], d[i+1], d[i+2]);
-      var out = hslToRgb(targets[part][0], targets[part][1], origHsl[2]);
-      d[i] = out[0]; d[i+1] = out[1]; d[i+2] = out[2];
-    }
-    ctx.putImageData(imgd, 0, 0);
-  }
-  // CanvasTexture.refresh() — properly re-uploads to GPU.
-  tex.refresh();
+  // No-op: colour customisation removed. Character selection uses picker.
 }
 
 function loadState(){
@@ -627,6 +561,7 @@ var BootScene = new Phaser.Class({
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
     // Teacher NPC sprite (extracted from the teacher spritesheet, 55x65 cells, 7 cols x 4 rows)
+    this.load.spritesheet('teacher_npc', A+'teacher_npc.png', { frameWidth:55, frameHeight:65 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('bee', A+'Bee_animation.png', { frameWidth:16, frameHeight:16 });
@@ -694,6 +629,23 @@ function buildAnimations(scene){
   mk('idle-right', [36], 1);
   mk('walk-right', [42,43,44,45,46,47], 9);
 
+  // Teacher NPC: teacher_npc.png, 55x65px, 7 cols x 4 rows = 28 frames
+  // Row 0=DOWN, Row 1=LEFT, Row 2=RIGHT, Row 3=UP
+  // Cols 0-2 = idle variants, cols 3-6 = walk frames
+  function mkT(key, frames, rate, repeat){
+    if (!anims.exists(key))
+      anims.create({ key:key,
+        frames: anims.generateFrameNumbers('teacher_npc', { frames:frames }),
+        frameRate: rate, repeat: (repeat===undefined?-1:repeat) });
+  }
+  mkT('t-idle-down',  [0], 1);
+  mkT('t-walk-down',  [3,4,5,6], 8);
+  mkT('t-idle-left',  [7], 1);
+  mkT('t-walk-left',  [10,11,12,13], 8);
+  mkT('t-idle-right', [14], 1);
+  mkT('t-walk-right', [17,18,19,20], 8);
+  mkT('t-idle-up',    [21], 1);
+  mkT('t-walk-up',    [24,25,26,27], 8);
 
   if (!anims.exists('water-anim'))
     anims.create({ key:'water-anim',
@@ -1988,13 +1940,16 @@ var GardenScene = new Phaser.Class({
     this.farmerIdx = 0;
     var start = this.farmerRoute[0];
 
-    var f = this.add.sprite(start.x, start.y, 'player', 0);
+    // Use teacher_npc sprite if loaded, otherwise fall back to tinted player sprite
+    var npcKey = this.textures.exists('teacher_npc') ? 'teacher_npc' : 'player';
+    var f = this.add.sprite(start.x, start.y, npcKey, 0);
     f.setOrigin(0.5, 0.85);
     f.setDepth(f.y);
-    f.setTint(0xf4c87a);
+    f.setScale(1.1);   // slightly larger than the student player
+    if (npcKey === 'player') f.setTint(0xf4c87a);  // fallback tint only
     f.facing = 'down';
-    f.npcKey = 'player';
-    f.play('idle-down');
+    f.npcKey = npcKey;
+    f.play(npcKey === 'teacher_npc' ? 't-idle-down' : 'idle-down');
     this.farmer = f;
     this.farmerSpd = 55;       // pixels per second
     this.farmerPause = 0;
@@ -2010,7 +1965,7 @@ var GardenScene = new Phaser.Class({
       var face = Math.abs(pdx) > Math.abs(pdy)
         ? (pdx<0 ? 'left' : 'right')
         : (pdy<0 ? 'up' : 'down');
-      var nearKey = 'idle-' + face;
+      var nearKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + face;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==nearKey) f.play(nearKey);
       f.facing = face;
       f.setDepth(f.y);
@@ -2018,7 +1973,7 @@ var GardenScene = new Phaser.Class({
     }
     if (this.farmerPause > 0){
       this.farmerPause -= dtMs;
-      var idleKey = 'idle-' + f.facing;
+      var idleKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==idleKey) f.play(idleKey);
       return;
     }
@@ -2029,7 +1984,7 @@ var GardenScene = new Phaser.Class({
       // Arrived — pause briefly then advance
       this.farmerPause = 1200 + Math.random()*900;
       f.facing = wp.face || 'down';
-      f.play('idle-' + f.facing);
+      f.play((f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing);
       this.farmerIdx = (this.farmerIdx + 1) % this.farmerRoute.length;
       return;
     }
@@ -2041,7 +1996,7 @@ var GardenScene = new Phaser.Class({
       ? (dx<0 ? 'left' : 'right')
       : (dy<0 ? 'up' : 'down');
     if (face !== f.facing){ f.facing = face; }
-    var anim = 'walk-' + face;
+    var anim = (f.npcKey==='teacher_npc' ? 't-walk-' : 'walk-') + face;
     if (f.anims.currentAnim===null || f.anims.currentAnim.key!==anim) f.play(anim, true);
     f.setDepth(f.y);
   },
