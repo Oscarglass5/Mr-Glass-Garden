@@ -11,7 +11,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: #1a2810; overflow: hidden;
-    font-family: 'VT323', 'Courier New', monospace; font-size: 20px; }
+    font-family: 'VT323', 'Courier New', monospace; font-size: 24px; }
   #game-container { width: 100vw; height: 100vh; display: flex;
     align-items: center; justify-content: center; }
   canvas { image-rendering: pixelated; image-rendering: crisp-edges;
@@ -27,23 +27,23 @@
     box-shadow: 0 8px 0 #5a3808; }
   #modal-head { background: #7a4c10; padding: 12px 16px; display: flex;
     justify-content: space-between; align-items: center; border-bottom: 3px solid #5a3808; }
-  #modal-title { color: #f0d060; font-size: 15px; letter-spacing: 1px; font-weight: bold; }
+  #modal-title { color: #f0d060; font-size: 22px; letter-spacing: 1px; font-weight: bold; }
   #modal-close { background: #501008; border: 2px solid #c03010; color: #f0d060;
-    font-size: 13px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
+    font-size: 17px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
   #modal-close:hover { background: #6a1810; }
   #modal-body { overflow-y: auto; padding: 16px 18px; flex: 1; color: #3a2004; max-height: 500px; }
 
-  .legend { display:flex; gap:16px; margin-bottom:12px; font-size:11px; color:#7a4820; }
+  .legend { display:flex; gap:16px; margin-bottom:12px; font-size:19px; color:#7a4820; }
   .legend span { display:flex; align-items:center; gap:5px; }
   .box { width:14px; height:14px; border:2px solid; display:inline-flex;
-    align-items:center; justify-content:center; font-size:11px; line-height:1; }
+    align-items:center; justify-content:center; font-size:19px; line-height:1; }
   .box.none { border-color:#c8a860; background:#f0e8d0; color:transparent; }
   .box.prog { border-color:#c8901c; background:#fff0c0; color:#c8901c; }
   .box.conf { border-color:#40a020; background:#d8f0c8; color:#40a020; }
 
   .stats { display:flex; gap:10px; margin-bottom:12px; }
   .stat { flex:1; background:#fdf0d0; border:2px solid #c8a860; padding:8px 10px; text-align:center; }
-  .stat label { display:block; color:#7a5820; font-size:9px; margin-bottom:4px; }
+  .stat label { display:block; color:#7a5820; font-size:13px; margin-bottom:4px; }
   .stat b { font-size:18px; }
 
   .pbar { height:12px; background:#2a1c04; border:2px solid #c8a860; margin:6px 0 14px;
@@ -51,47 +51,47 @@
   .pfill { height:100%; transition: width 0.5s ease; }
 
   .sect { margin-bottom:18px; }
-  .sect-title { color:#5a3000; font-size:13px; margin-bottom:8px; padding-bottom:5px;
+  .sect-title { color:#5a3000; font-size:17px; margin-bottom:8px; padding-bottom:5px;
     border-bottom:2px solid #c8901c; font-weight:bold; }
-  .grouphead { color:#5a7020; font-size:13px; font-weight:bold; margin-bottom:8px; }
-  .iq { color:#7a4000; font-size:11px; margin:12px 0 6px; font-weight:bold; }
+  .grouphead { color:#5a7020; font-size:17px; font-weight:bold; margin-bottom:8px; }
+  .iq { color:#7a4000; font-size:19px; margin:12px 0 6px; font-weight:bold; }
   .dp { display:flex; align-items:flex-start; gap:9px; margin-bottom:5px; cursor:pointer;
     padding:7px; border:1px solid #e0c890; background:#fdf5dc; }
   .dp:hover { border-color:#c8901c; background:#fff8e8; }
-  .dp span { font-size:12px; line-height:1.5; }
+  .dp span { font-size:16px; line-height:1.5; }
 
   .row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px;
     border:1px solid #e0c890; background:#fdf5dc; margin-bottom:4px; cursor:pointer; }
   .row:hover { border-color:#c8901c; background:#fff8e8; }
-  .row span { font-size:12px; }
+  .row span { font-size:16px; }
   .chk { width:16px; height:16px; border:2px solid #c8a860; display:inline-flex;
-    align-items:center; justify-content:center; font-size:12px; color:#40a020; }
+    align-items:center; justify-content:center; font-size:16px; color:#40a020; }
   .chk.on { background:#d8f0c8; border-color:#40a020; }
 
   .bed { border:2px solid #c8a860; padding:11px; margin-bottom:10px; background:#fdf0d0; }
-  .bed b { color:#5a3000; font-size:13px; }
-  .note { color:#7a5820; font-size:11px; margin:8px 0 12px; }
-  .note2 { color:#7a5820; font-size:11px; margin:4px 0; }
-  .btn { background:#d8f0c8; border:2px solid #40a020; color:#305010; font-size:12px;
+  .bed b { color:#5a3000; font-size:17px; }
+  .note { color:#7a5820; font-size:19px; margin:8px 0 12px; }
+  .note2 { color:#7a5820; font-size:19px; margin:4px 0; }
+  .btn { background:#d8f0c8; border:2px solid #40a020; color:#305010; font-size:16px;
     padding:7px 14px; cursor:pointer; font-family:inherit; margin-top:6px; }
   .btn:hover { background:#c8e8b8; }
   .btn.done { background:#f0fce8; color:#80b060; border-color:#80b060; cursor:default; }
 
   .mail { background:#eef4ff; border:2px solid #8898c0; padding:11px; margin-bottom:10px; }
   .mail.new { border-color:#6878c8; }
-  .mfrom { color:#506090; font-size:11px; margin-bottom:4px; }
-  .msubj { color:#304080; font-size:13px; font-weight:bold; margin-bottom:6px; }
-  .mbody { color:#505878; font-size:12px; line-height:1.6; }
+  .mfrom { color:#506090; font-size:19px; margin-bottom:4px; }
+  .msubj { color:#304080; font-size:17px; font-weight:bold; margin-bottom:6px; }
+  .mbody { color:#505878; font-size:16px; line-height:1.6; }
 
   .modulepick { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
   .modbtn { display:block; width:100%; text-align:left; background:#fdf0d0;
     border:2px solid #c8a860; padding:11px 13px; cursor:pointer; font-family:inherit;
     color:#3a2004; }
   .modbtn:hover { background:#fff8e8; border-color:#c8901c; }
-  .modtitle { font-size:13px; font-weight:bold; color:#5a3000; margin-bottom:3px; }
-  .modsub { font-size:11px; color:#7a5820; }
+  .modtitle { font-size:17px; font-weight:bold; color:#5a3000; margin-bottom:3px; }
+  .modsub { font-size:19px; color:#7a5820; }
   .backbtn { background:#7a4c10; border:2px solid #5a3808; color:#f0d060;
-    font-size:11px; padding:6px 12px; cursor:pointer; font-family:inherit;
+    font-size:19px; padding:6px 12px; cursor:pointer; font-family:inherit;
     margin-bottom:12px; }
   .backbtn:hover { background:#8b5c14; }
 
@@ -101,7 +101,7 @@
     padding:14px; margin-top:10px; }
   .charrow { margin-bottom:12px; }
   .charrow:last-child { margin-bottom:0; }
-  .charlabel { font-family:'Press Start 2P', monospace; font-size:10px;
+  .charlabel { font-family:'Press Start 2P', monospace; font-size:18px;
     color:#6a4818; letter-spacing:1px; margin-bottom:8px; }
   .swatches { display:flex; flex-wrap:wrap; gap:7px; }
   .swatch { width:30px; height:30px; border:2px solid #6a4818;
@@ -110,7 +110,7 @@
   .swatch.sel { border-color:#7c3a18; outline:2px solid #d4a868; outline-offset:1px; }
   .swatch.reset { background: repeating-linear-gradient(45deg, #c4b094, #c4b094 4px, #f4e8c8 4px, #f4e8c8 8px); }
   .charactions { margin-top:14px; text-align:right; }
-  .resetbtn { font-family:'Press Start 2P', monospace; font-size:9px;
+  .resetbtn { font-family:'Press Start 2P', monospace; font-size:13px;
     background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
     padding:8px 14px; cursor:pointer; letter-spacing:1px; }
   .resetbtn:hover { background:#b0d0a0; }
@@ -125,23 +125,23 @@
   .skilllead { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
   .skillicon { width:36px; height:36px; flex:none;
     border:2px solid #2a1804; color:#f4e8c8;
-    font-family:'Press Start 2P', monospace; font-size:14px;
+    font-family:'Press Start 2P', monospace; font-size:18px;
     display:flex; align-items:center; justify-content:center; }
   .skillbody { flex:1; min-width:0; }
-  .skillname { font-family:'Press Start 2P', monospace; font-size:10px;
+  .skillname { font-family:'Press Start 2P', monospace; font-size:18px;
     color:#3a2004; letter-spacing:1px; }
   .skilllvl { color:#7a3000; margin-left:4px; }
-  .skillblurb { font-size:13px; color:#5a3a18; margin-top:3px; line-height:1.4; }
-  .skilllock { font-size:12px; color:#a04830; margin-top:4px; font-style:italic; }
+  .skillblurb { font-size:17px; color:#5a3a18; margin-top:3px; line-height:1.4; }
+  .skilllock { font-size:16px; color:#a04830; margin-top:4px; font-style:italic; }
   .skillbar { position:relative; height:18px; background:#3a2a14; border:2px solid #6a4818;
     margin-bottom:8px; overflow:hidden; }
   .skillfill { height:100%; transition: width 0.3s ease; color:#f4e8c8;
-    font-family:'Press Start 2P', monospace; font-size:8px;
+    font-family:'Press Start 2P', monospace; font-size:12px;
     display:flex; align-items:center; justify-content:center; letter-spacing:1px; }
-  .skillxp { position:absolute; right:6px; top:2px; font-size:11px;
+  .skillxp { position:absolute; right:6px; top:2px; font-size:19px;
     color:#f4e8c8; text-shadow: 1px 1px 0 #1a0a04; }
   .skillactions { margin-top:6px; }
-  .studybtn { font-family:'Press Start 2P', monospace; font-size:9px;
+  .studybtn { font-family:'Press Start 2P', monospace; font-size:13px;
     background:#9ac08a; border:2px solid #4a6028; color:#1a2a14;
     padding:8px 12px; cursor:pointer; letter-spacing:1px; }
   .studybtn:hover { background:#b0d0a0; }
@@ -149,43 +149,43 @@
 
   /* ---- Skill tabs ---- */
   .skill-tabs { display:flex; gap:0; margin-bottom:12px; border-bottom:3px solid #6a4818; }
-  .skill-tab { font-family:'Press Start 2P', monospace; font-size:9px;
+  .skill-tab { font-family:'Press Start 2P', monospace; font-size:13px;
     background:#e8d8a0; border:2px solid #6a4818; border-bottom:none;
     color:#3a2a10; padding:7px 14px; cursor:pointer; letter-spacing:1px; margin-right:2px; }
   .skill-tab.active { background:#f4e8c8; color:#1a0e00; }
   .skill-tab:hover { background:#f0dfa8; }
 
   /* ---- Active session banner ---- */
-  .session-banner { padding:10px 12px; margin-bottom:10px; font-size:12px;
+  .session-banner { padding:10px 12px; margin-bottom:10px; font-size:16px;
     font-family:monospace; line-height:1.6; border:2px solid; }
   .session-banner.active { background:#1a2a14; border-color:#4a8a30; color:#a0d080; }
   .session-banner.expired { background:#2a1408; border-color:#c04020; color:#f0a060;
-    font-family:'Press Start 2P', monospace; font-size:9px; text-align:center; padding:14px; }
-  .session-time { font-family:'Press Start 2P', monospace; font-size:9px; color:#80d060; }
+    font-family:'Press Start 2P', monospace; font-size:13px; text-align:center; padding:14px; }
+  .session-time { font-family:'Press Start 2P', monospace; font-size:13px; color:#80d060; }
 
   /* ---- Journal ---- */
   .journal-list { display:flex; flex-direction:column; gap:10px; }
   .journal-entry { background:#fff8e8; border:2px solid #c8a868; padding:11px 13px; }
   .journal-head { display:flex; align-items:center; gap:8px; margin-bottom:7px; flex-wrap:wrap; }
-  .journal-skill { font-family:'Press Start 2P', monospace; font-size:8px;
+  .journal-skill { font-family:'Press Start 2P', monospace; font-size:12px;
     color:#f4e8c8; padding:3px 7px; }
-  .journal-date { font-size:12px; color:#806840; flex:1; }
-  .journal-xp { font-family:'Press Start 2P', monospace; font-size:8px; color:#4a8a30; }
-  .journal-study, .journal-takeaway { font-size:12px; line-height:1.6; color:#3a2a10; margin-bottom:4px; }
-  .removebtn { font-family:monospace; font-size:11px; background:#e8c0a0;
+  .journal-date { font-size:16px; color:#806840; flex:1; }
+  .journal-xp { font-family:'Press Start 2P', monospace; font-size:12px; color:#4a8a30; }
+  .journal-study, .journal-takeaway { font-size:16px; line-height:1.6; color:#3a2a10; margin-bottom:4px; }
+  .removebtn { font-family:monospace; font-size:19px; background:#e8c0a0;
     border:1px solid #a06030; color:#5a2010; padding:3px 8px; cursor:pointer; margin-top:6px; }
   .removebtn:hover { background:#f0a080; }
   .char-picker { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; padding:8px 0; }
   .char-option { width:120px; background:#f4e8c8; border:3px solid #c4a868; padding:10px 8px; cursor:pointer; text-align:center; }
   .char-option:hover { border-color:#8a6028; }
   .char-option.selected { border-color:#4a8a30; background:#e8f4d8; }
-  .char-label { font-family:'Press Start 2P',monospace; font-size:8px; color:#3a2a10; margin-bottom:4px; }
-  .char-desc { font-family:monospace; font-size:11px; color:#7a6040; }
+  .char-label { font-family:'Press Start 2P',monospace; font-size:12px; color:#3a2a10; margin-bottom:4px; }
+  .char-desc { font-family:monospace; font-size:19px; color:#7a6040; }
 
   /* ---- Tab bar in Character modal ---- */
   .tabbar { display:flex; gap:0; margin-bottom:14px; border-bottom:3px solid #6a4818; }
   .tab { flex:1; background:#d4b878; border:2px solid #6a4818; border-bottom:none;
-    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:11px;
+    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:19px;
     letter-spacing:1px; padding:11px 0; cursor:pointer; margin-bottom:-1px; }
   .tab:hover { background:#e4c888; }
   .tab.active { background:#f4e8c8; border-bottom:3px solid #f4e8c8; color:#6a3000; }
@@ -196,21 +196,21 @@
     box-shadow: inset 0 0 0 1px #d4b878, inset 0 0 0 2px #6a4818;
     padding:14px; margin-top:10px; }
   .sessionhead { display:flex; align-items:center; gap:12px; }
-  .sessionskill { font-family:'Press Start 2P', monospace; font-size:13px;
+  .sessionskill { font-family:'Press Start 2P', monospace; font-size:17px;
     color:#3a2004; letter-spacing:1px; }
-  .sessionlen { font-size:14px; color:#6a4818; margin-top:4px; }
+  .sessionlen { font-size:18px; color:#6a4818; margin-top:4px; }
   .sessiontxt { width:100%; padding:10px; font-family:inherit; font-size:17px;
     color:#3a2004; background:#fff8e8; border:2px solid #c8a868;
     resize:vertical; margin-top:6px; box-sizing:border-box; }
   .sessiontxt:focus { outline:2px solid #c8901c; outline-offset:1px; }
   .sessionrecall { background:#fff8e8; border:2px solid #c8a868;
-    padding:10px 12px; margin-top:10px; font-size:14px; }
-  .sessionrecall span { color:#7a5820; font-size:13px; }
+    padding:10px 12px; margin-top:10px; font-size:18px; }
+  .sessionrecall span { color:#7a5820; font-size:17px; }
   .sessionrecall blockquote { margin:6px 0 0; padding-left:10px;
     border-left:3px solid #c8a868; color:#3a2004; font-style:italic; }
   .sessionactions { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
   .confirmbtn, .cancelbtn, .discardbtn {
-    font-family:'Press Start 2P', monospace; font-size:10px; letter-spacing:1px;
+    font-family:'Press Start 2P', monospace; font-size:18px; letter-spacing:1px;
     padding:10px 16px; cursor:pointer; border:2px solid; }
   .confirmbtn { background:#9ac08a; border-color:#4a6028; color:#1a2a14; }
   .confirmbtn:hover { background:#b0d0a0; }
@@ -221,7 +221,7 @@
 
   /* ---- Skill action buttons ---- */
   .passivebtn, .activebtn { font-family:'Press Start 2P', monospace;
-    font-size:9px; letter-spacing:1px; padding:8px 12px; cursor:pointer;
+    font-size:13px; letter-spacing:1px; padding:8px 12px; cursor:pointer;
     border:2px solid; margin-right:6px; }
   .passivebtn { background:#9ac08a; border-color:#4a6028; color:#1a2a14; }
   .passivebtn:hover:not(:disabled) { background:#b0d0a0; }
@@ -233,7 +233,7 @@
   .journaltabs { display:flex; gap:0; margin-top:6px; border-bottom:3px solid #6a4818;
     margin-bottom:14px; }
   .jtab { flex:1; background:#d4b878; border:2px solid #6a4818; border-bottom:3px solid;
-    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:10px;
+    color:#3a2004; font-family:'Press Start 2P', monospace; font-size:18px;
     letter-spacing:1px; padding:8px 0; cursor:pointer; margin-bottom:-3px; }
   .jtab:hover { background:#e4c888; }
   .jtab.active { background:#f4e8c8; color:#6a3000; }
@@ -241,14 +241,14 @@
   .journalentry { background:#fff8e8; border:2px solid #c8a868; padding:11px 13px; }
   .jhead { display:flex; justify-content:space-between; align-items:center;
     border-bottom:1px dashed #c4a868; padding-bottom:6px; margin-bottom:8px; }
-  .jdate { font-size:13px; color:#7a5820; }
-  .jxp { font-family:'Press Start 2P', monospace; font-size:10px;
+  .jdate { font-size:17px; color:#7a5820; }
+  .jxp { font-family:'Press Start 2P', monospace; font-size:18px;
     color:#4a6028; background:#e4f0d8; padding:3px 8px; border:1px solid #4a6028; }
-  .jrow { font-size:15px; color:#3a2004; margin-bottom:6px; line-height:1.45; }
-  .jrow b { color:#6a3000; font-family:'Press Start 2P', monospace; font-size:9px;
+  .jrow { font-size:19px; color:#3a2004; margin-bottom:6px; line-height:1.45; }
+  .jrow b { color:#6a3000; font-family:'Press Start 2P', monospace; font-size:13px;
     letter-spacing:1px; margin-right:4px; }
   .jactions { margin-top:8px; text-align:right; }
-  .jdelbtn { font-family:'Press Start 2P', monospace; font-size:8px;
+  .jdelbtn { font-family:'Press Start 2P', monospace; font-size:12px;
     background:transparent; border:1px solid #a04830; color:#a04830;
     padding:5px 9px; cursor:pointer; letter-spacing:1px; }
   .jdelbtn:hover { background:#a04830; color:#fff5e8; }

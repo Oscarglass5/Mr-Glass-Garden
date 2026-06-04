@@ -499,7 +499,7 @@ function checkAchievements(scene){
 // Position of major structures (tile coords)
 // All structures sit inside the fenced area (top fence at row 2, west fence at col 2),
 // leaving rows 0-1 and cols 0-1 as grass that's visible-but-unreachable beyond the fence.
-var FARMHOUSE = { c:3, r:3, w:4, h:6 };   // cols 3-6, rows 3-8
+var FARMHOUSE = { c:2, r:2, w:7, h:6 };   // cols 3-6, rows 3-8
 var NOTICEBOARD = { c:8, r:8 };
 var WELL = { c:9, r:9 };
 var STUDY_TREE = { c:20, r:11, w:3, h:3 }; // 3x3 footprint (moved 2 cols right to centre on grass patch)
@@ -518,7 +518,7 @@ var BED_DEFS = [
 var CROP_TILES = {
   m1: [[0,1],[1,1],[2,1],[3,1],[3,1]],  // zucchini-ish (cols 0-3 row 1)
   m2: [[0,5],[1,5],[2,5],[3,5],[3,5]],  // cabbage (cols 0-3 row 5)
-  m3: [[4,5],[5,5],[6,5],[7,5],[7,5]],  // pumpkin (cols 4-7 row 5)
+  m3: [[0,7],[1,7],[2,7],[3,7],[3,7]],  // wheat/grain (row 7, distinct from M2 cabbage)
   m4: [[0,3],[1,3],[2,3],[3,3],[3,3]]   // tomato vine (cols 0-3 row 3)
 };
 
@@ -548,6 +548,8 @@ var BootScene = new Phaser.Class({
     this.load.image('ts_details',   A+'Details32.png');
     this.load.image('ts_terrainEx', A+'TerrainExpanded32.png');
     this.load.image('ts_orchard',   A+'Orchard32.png');
+    this.load.image('ts_trees_anim', A+'Trees_animation.png');
+    this.load.image('ts_house',      A+'house_details.png');
     this.load.image('ts_plants',    A+'Plants.png');
     this.load.image('ts_grass_at',  A+'Grass_AutoTile.png');
     this.load.image('ts_earth',     A+'Earth.png');
@@ -561,7 +563,6 @@ var BootScene = new Phaser.Class({
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
     this.load.spritesheet('player', A+'Player.png', { frameWidth:80, frameHeight:80 });
     // Teacher NPC sprite (extracted from the teacher spritesheet, 55x65 cells, 7 cols x 4 rows)
-    this.load.spritesheet('teacher_npc', A+'teacher_npc.png', { frameWidth:55, frameHeight:65 });
     this.load.spritesheet('water', A+'Water_tile_animation.png', { frameWidth:32, frameHeight:32 });
     this.load.spritesheet('butterfly', A+'White_butterfly_animation.png', { frameWidth:16, frameHeight:16 });
     this.load.spritesheet('bee', A+'Bee_animation.png', { frameWidth:16, frameHeight:16 });
@@ -629,25 +630,7 @@ function buildAnimations(scene){
   mk('idle-right', [36], 1);
   mk('walk-right', [42,43,44,45,46,47], 9);
 
-  // Teacher NPC: teacher_npc.png, 55x65px, 7 cols x 4 rows = 28 frames
-  // Row 0=DOWN, Row 1=LEFT, Row 2=RIGHT, Row 3=UP
-  // Cols 0-2 = idle variants, cols 3-6 = walk frames
-  function mkT(key, frames, rate, repeat){
-    if (!anims.exists(key))
-      anims.create({ key:key,
-        frames: anims.generateFrameNumbers('teacher_npc', { frames:frames }),
-        frameRate: rate, repeat: (repeat===undefined?-1:repeat) });
-  }
-  mkT('t-idle-down',  [0], 1);
-  mkT('t-walk-down',  [3,4,5,6], 8);
-  mkT('t-idle-left',  [7], 1);
-  mkT('t-walk-left',  [10,11,12,13], 8);
-  mkT('t-idle-right', [14], 1);
-  mkT('t-walk-right', [17,18,19,20], 8);
-  mkT('t-idle-up',    [21], 1);
-  mkT('t-walk-up',    [24,25,26,27], 8);
-
-  if (!anims.exists('water-anim'))
+    if (!anims.exists('water-anim'))
     anims.create({ key:'water-anim',
       frames: anims.generateFrameNumbers('water', { start:0, end:2 }),
       frameRate:4, repeat:-1 });
@@ -865,13 +848,13 @@ var GardenScene = new Phaser.Class({
       ctx.drawImage(grassAT, p[0]*TS, p[1]*TS, TS, TS, dx, dy, TS, TS);
     }
     function isGrass(c, r){
-      // Off-map tiles count as grass so the world edge doesn't get hard-cut.
       if (r<0 || r>=MAP_H || c<0 || c>=MAP_W) return true;
-      // Water tiles are treated as grass for autotile purposes — the water rim
-      // tiles handle the visual transition, so grass next to water should use
-      // interior grass variants (no transparent edge gaps, no colour mismatch).
-      if (TM[r][c] === T_WATER || TM[r][c] === T_WATERFALL) return true;
-      return TM[r][c] === T_GRASS;
+      var t = TM[r][c];
+      // Treat water, path, and bed-dirt as grass so adjacent grass tiles
+      // use interior (solid) autotile variants — no colour mismatch or edge fringing.
+      if (t === T_WATER || t === T_WATERFALL) return true;
+      if (t === T_PATH  || t === T_DIRT)      return true;
+      return t === T_GRASS;
     }
     function pickGrass(c, r){
       var hN = !isGrass(c, r-1);
@@ -1060,17 +1043,24 @@ var GardenScene = new Phaser.Class({
   //  Helper to extract a sub-region of a loaded image as a sprite
   // ============================================================
   _placeCropImage: function(key, sx, sy, sw, sh, wx, wy, dw, dh, depth){
-    var img = this.textures.get(key).getSourceImage();
+    var tex = this.textures.get(key);
+    if (!tex) return null;
+    var img = tex.getSourceImage();
+    if (!img) return null;
     var tkey = key+'_'+sx+'_'+sy+'_'+sw+'_'+sh;
     if (!this.textures.exists(tkey)){
-      var cnv = this.textures.createCanvas(tkey, sw, sh);
-      cnv.getContext().drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      cnv.refresh();
+      // Use a plain HTMLCanvasElement + addCanvas (NOT createCanvas).
+      // createCanvas produces a Phaser CanvasTexture whose __BASE frame has
+      // null data, causing setSizeToFrame to crash. addCanvas produces a
+      // regular image-backed Texture with valid frame data.
+      var c = document.createElement('canvas');
+      c.width = sw; c.height = sh;
+      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      this.textures.addCanvas(tkey, c);
     }
     var spr = this.add.image(wx, wy, tkey).setOrigin(0.5, 1);
     if (dw) spr.setDisplaySize(dw, dh);
-    if (depth!==undefined) spr.setDepth(depth);
-    else spr.setDepth(wy);
+    spr.setDepth(depth !== undefined ? depth : wy);
     return spr;
   },
 
@@ -1214,8 +1204,16 @@ var GardenScene = new Phaser.Class({
     this._farmhouseShadowMeta = { x: fhPxX, y: fhPxY, w: fhW, h: fhH };
     this._farmhouseShadow = self.add.graphics().setDepth(fhPxY + fhH - 1);
     this.refreshSunShadow();
-    this._placeCropImage('ts_buildings', 0, 0, 128, 192,
-      fhPxX + fhW/2, fhPxY + fhH, fhW, fhH, fhPxY + fhH);
+    if (this.textures.exists('ts_house')){
+      this._placeCropImage('ts_house',0,80,160,116,fhPxX+fhW/2,fhPxY+fhH*0.55,fhW*1.05,fhH*0.70,fhPxY+fhH*0.55);
+      this._placeCropImage('ts_house',0,16,160,64, fhPxX+fhW/2,fhPxY+fhH,fhW,fhH*0.40,fhPxY+fhH);
+      var wy2=fhPxY+fhH*0.63;
+      this._placeCropImage('ts_house',32,208,32,32,fhPxX+fhW*0.22,wy2,TS*0.9,TS*0.9,wy2+1);
+      this._placeCropImage('ts_house',64,208,32,32,fhPxX+fhW*0.50,wy2,TS*0.9,TS*0.9,wy2+1);
+      this._placeCropImage('ts_house',96,208,32,32,fhPxX+fhW*0.78,wy2,TS*0.9,TS*0.9,wy2+1);
+    } else {
+      this._placeCropImage('ts_buildings',0,0,128,192,fhPxX+fhW/2,fhPxY+fhH,fhW,fhH,fhPxY+fhH);
+    }
 
     // ---- NOTICEBOARD (mailbox replacement next to farmhouse) ----
     // Source: Buildings32 col 4 row 0 = px(128,0,32,32)
@@ -1238,8 +1236,9 @@ var GardenScene = new Phaser.Class({
     this.studyTreeShadow = null;
     this.studyTreeCentreX = centreX;
     this.studyTreeBaseY   = baseY;
-    this.studyTreeMaxW    = TS * 3.5;
-    this.studyTreeMaxH    = TS * 4.2;
+    this.studyTreeMaxW    = TS * 3.8;
+    this.studyTreeMaxH    = TS * 4.5;
+    this._buildStudyTreeAtlas();
     this.refreshStudyTree();
 
     // ---- CAVE (top-right, beyond river) ----
@@ -1249,6 +1248,18 @@ var GardenScene = new Phaser.Class({
     // Source: TerrainExpanded cols 10-12 rows 5-7 -> px(320,160,96,96)
     this._placeCropImage('ts_terrainEx', 320, 160, 96, 96,
       cvX + cvW/2, cvY + cvH, cvW, cvH, cvY + cvH);
+  },
+
+  _buildStudyTreeAtlas: function(){
+    if (this.textures.exists('study_tree_atlas') || !this.textures.exists('ts_trees_anim')) return;
+    var src = this.textures.get('ts_trees_anim').getSourceImage();
+    if (!src || !src.width) return;
+    var FW=64, FH=104, N=10;
+    var atlas = this.textures.createCanvas('study_tree_atlas', FW, FH*N);
+    var ctx = atlas.getContext();
+    for (var i=0;i<N;i++) ctx.drawImage(src,192,i*FH,FW,FH,0,i*FH,FW,FH);
+    for (var fi=0;fi<N;fi++) atlas.add(fi,0,0,fi*FH,FW,FH);
+    atlas.refresh();
   },
 
   refreshSunShadow: function(){
@@ -1553,9 +1564,10 @@ var GardenScene = new Phaser.Class({
     var tkey = 'crop_' + b.m + '_s' + stage;
     if (!this.textures.exists(tkey)){
       var src = this.textures.get('ts_crops').getSourceImage();
-      var cnv = this.textures.createCanvas(tkey, 32, 32);
-      cnv.getContext().drawImage(src, sx, sy, 32, 32, 0, 0, 32, 32);
-      cnv.refresh();
+      var bc = document.createElement('canvas');
+      bc.width = 32; bc.height = 32;
+      bc.getContext('2d').drawImage(src, sx, sy, 32, 32, 0, 0, 32, 32);
+      this.textures.addCanvas(tkey, bc);
     }
 
     for (var ri = 0; ri < rows; ri++){
@@ -1940,16 +1952,9 @@ var GardenScene = new Phaser.Class({
     this.farmerIdx = 0;
     var start = this.farmerRoute[0];
 
-    // Use teacher_npc sprite if loaded, otherwise fall back to tinted player sprite
-    var npcKey = this.textures.exists('teacher_npc') ? 'teacher_npc' : 'player';
-    var f = this.add.sprite(start.x, start.y, npcKey, 0);
-    f.setOrigin(0.5, 0.85);
-    f.setDepth(f.y);
-    f.setScale(1.1);   // slightly larger than the student player
-    if (npcKey === 'player') f.setTint(0xf4c87a);  // fallback tint only
-    f.facing = 'down';
-    f.npcKey = npcKey;
-    f.play(npcKey === 'teacher_npc' ? 't-idle-down' : 'idle-down');
+    var f = this.add.sprite(start.x, start.y, 'player', 0);
+    f.setOrigin(0.5, 0.85); f.setDepth(f.y); f.setTint(0xf4c87a);
+    f.facing = 'down'; f.npcKey = 'player'; f.play('idle-down');
     this.farmer = f;
     this.farmerSpd = 55;       // pixels per second
     this.farmerPause = 0;
@@ -1965,7 +1970,7 @@ var GardenScene = new Phaser.Class({
       var face = Math.abs(pdx) > Math.abs(pdy)
         ? (pdx<0 ? 'left' : 'right')
         : (pdy<0 ? 'up' : 'down');
-      var nearKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + face;
+      var nearKey = 'idle-' + face;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==nearKey) f.play(nearKey);
       f.facing = face;
       f.setDepth(f.y);
@@ -1973,7 +1978,7 @@ var GardenScene = new Phaser.Class({
     }
     if (this.farmerPause > 0){
       this.farmerPause -= dtMs;
-      var idleKey = (f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing;
+      var idleKey = 'idle-' + f.facing;
       if (f.anims.currentAnim===null || f.anims.currentAnim.key!==idleKey) f.play(idleKey);
       return;
     }
@@ -1984,7 +1989,7 @@ var GardenScene = new Phaser.Class({
       // Arrived — pause briefly then advance
       this.farmerPause = 1200 + Math.random()*900;
       f.facing = wp.face || 'down';
-      f.play((f.npcKey==='teacher_npc' ? 't-idle-' : 'idle-') + f.facing);
+      f.play('idle-' + f.facing);
       this.farmerIdx = (this.farmerIdx + 1) % this.farmerRoute.length;
       return;
     }
@@ -1996,7 +2001,7 @@ var GardenScene = new Phaser.Class({
       ? (dx<0 ? 'left' : 'right')
       : (dy<0 ? 'up' : 'down');
     if (face !== f.facing){ f.facing = face; }
-    var anim = (f.npcKey==='teacher_npc' ? 't-walk-' : 'walk-') + face;
+    var anim = 'walk-' + face;
     if (f.anims.currentAnim===null || f.anims.currentAnim.key!==anim) f.play(anim, true);
     f.setDepth(f.y);
   },
@@ -2252,9 +2257,10 @@ var GardenScene = new Phaser.Class({
         var tcanKey = 'watering_can_crop';
         if (!this.textures.exists(tcanKey)){
           var src = this.textures.get('ts_tools').getSourceImage();
-          var cnv = this.textures.createCanvas(tcanKey, 32, 32);
-          cnv.getContext().drawImage(src, 0, 32, 32, 32, 0, 0, 32, 32);
-          cnv.refresh();
+          var wcc = document.createElement('canvas');
+          wcc.width = 32; wcc.height = 32;
+          wcc.getContext('2d').drawImage(src, 0, 32, 32, 32, 0, 0, 32, 32);
+          this.textures.addCanvas(tcanKey, wcc);
         }
         var tc = this.add.image(this.player.x + 14, this.player.y - 14, tcanKey)
           .setDisplaySize(24, 24).setDepth(this.player.depth + 1).setScrollFactor(1);

@@ -525,40 +525,40 @@ function openStudyPromptFor(skillKey){
   var cfg = CONFIG_SKILLS[skillKey];
   if (!cfg) return;
   closeModal();
-  var ov = document.getElementById('modal-overlay');
+  var ov    = document.getElementById('modal-overlay');
   var title = document.getElementById('modal-title');
   var body  = document.getElementById('modal-body');
-  title.textContent = cfg.name.toUpperCase() + ' — START SESSION';
+  title.textContent = cfg.name.toUpperCase() + ' — CHOOSE SESSION TYPE';
+  var mins = SESSION_DURATION_MS/60000;
   body.innerHTML =
-    '<p class="note" style="font-size:13px;line-height:1.65">'
-    + 'Before your ' + SESSION_DURATION_MS/60000 + '-minute ' + cfg.activityLabel.toLowerCase() + ' session, '
-    + 'write one sentence about what you plan to focus on.'
-    + '</p>'
-    + '<textarea id="study-input" style="width:100%;height:80px;box-sizing:border-box;'
-    + 'font-family:monospace;font-size:13px;background:#1a1208;color:#f0d060;'
-    + 'border:1px solid #6a5030;padding:8px;resize:vertical" '
-    + 'placeholder="e.g. I am going to review the fluid mosaic model and membrane transport."></textarea>'
-    + '<div style="margin-top:12px;display:flex;gap:10px">'
-    + '<button class="studybtn" id="study-start-btn" data-skill="' + skillKey + '">Start session</button>'
-    + '<button class="backbtn" id="study-cancel-btn">Cancel</button>'
-    + '</div>';
+    '<p class="note" style="margin-bottom:14px">How would you like to study?</p>'    +'<div style="display:flex;flex-direction:column;gap:14px;">'    +'<div style="background:#1a2a14;border:2px solid #4a8a30;padding:16px;">'    +'<div style="font-family:monospace;font-size:17px;font-weight:bold;color:#a0d060;margin-bottom:8px;">ACTIVE SESSION</div>'    +'<p style="font-size:15px;color:#c8d8b0;line-height:1.6;margin:0 0 12px;">Answer syllabus flashcard questions. Each correct response earns XP. Best for testing yourself.</p>'    +'<button class="studybtn" id="active-start-btn">Start active session</button>'    +'</div>'    +'<div style="background:#1a1a2a;border:2px solid #5060a8;padding:16px;">'    +'<div style="font-family:monospace;font-size:17px;font-weight:bold;color:#90a0e0;margin-bottom:8px;">PASSIVE SESSION</div>'    +'<p style="font-size:15px;color:#b0b8d8;line-height:1.6;margin:0 0 10px;">Set a '+mins+'-minute self-guided goal. Write what you plan to focus on, study independently, then submit a takeaway to earn XP.</p>'    +'<textarea id="study-input" style="width:100%;height:72px;box-sizing:border-box;font-family:monospace;font-size:15px;background:#0e0e1a;color:#c8d0f0;border:1px solid #4050a0;padding:8px;resize:vertical;margin-bottom:10px;" placeholder="e.g. I will review the fluid mosaic model and membrane transport."></textarea>'    +'<button class="studybtn" id="passive-start-btn">Start passive session</button>'    +'</div>'    +'<button class="backbtn" id="study-cancel-btn">Back</button>'    +'</div>';
   ov.classList.add('open');
-  var startBtn  = document.getElementById('study-start-btn');
-  var cancelBtn = document.getElementById('study-cancel-btn');
-  var input     = document.getElementById('study-input');
-  cancelBtn.onclick = function(){ openModal('skills', _modalScene); };
-  startBtn.onclick  = function(){
-    var text = (input.value || '').trim();
-    if (!text){ input.style.border = '1px solid #c04040'; return; }
-    if (!sessionStart(skillKey, text)){
-      body.innerHTML = '<p class="note">A session is already in progress. Finish it first.</p>';
-      return;
+  if (_modalScene && _modalScene.input && _modalScene.input.keyboard)
+    _modalScene.input.keyboard.disableGlobalCapture();
+
+  document.getElementById('study-cancel-btn').onclick = function(){
+    openModal('skills', _modalScene);
+  };
+  document.getElementById('active-start-btn').onclick = function(){
+    if (!sessionStart(skillKey, '[active]')){
+      body.innerHTML = '<p class="note">A session is already in progress.</p>'; return;
     }
     closeModal();
-    // Trigger animation (walk to water/bed, show tool, fade to black)
     if (_modalScene && _modalScene.startSessionAnimation) _modalScene.startSessionAnimation(skillKey);
     if (_modalScene && _modalScene.updateSessionBar) _modalScene.updateSessionBar();
-    if (_modalScene) _modalScene.showToast('Session started — focus and study!');
+    if (_modalScene) _modalScene.showToast('Active session started!');
+  };
+  document.getElementById('passive-start-btn').onclick = function(){
+    var inp = document.getElementById('study-input');
+    var text = inp ? inp.value.trim() : '';
+    if (!text){ if(inp) inp.style.border='1px solid #c04040'; return; }
+    if (!sessionStart(skillKey, text)){
+      body.innerHTML = '<p class="note">A session is already in progress.</p>'; return;
+    }
+    closeModal();
+    if (_modalScene && _modalScene.startSessionAnimation) _modalScene.startSessionAnimation(skillKey);
+    if (_modalScene && _modalScene.updateSessionBar) _modalScene.updateSessionBar();
+    if (_modalScene) _modalScene.showToast('Passive session started — come back in '+mins+' min.');
   };
 }
 
