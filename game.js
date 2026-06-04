@@ -558,6 +558,7 @@ var BootScene = new Phaser.Class({
     // Footstep sounds — two variants, alternated for natural cadence
     this.load.audio('step1', A+'Step_dirt_1.ogg');
     this.load.audio('step2', A+'Step_dirt_2.ogg');
+    this.load.audio('bgmusic', A+'Game_song_2.mp3');
 
     // Existing assets we still use
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
@@ -609,6 +610,21 @@ var BootScene = new Phaser.Class({
     if (typeof window !== 'undefined' && typeof window.markGameReady === 'function'){
       window.markGameReady();
     }
+    // Start music when ENTER is clicked on splash (audio context unlocked by then)
+    window.__onSplashDismissed = function(){
+      if (!window.__phaserGame) return;
+      var scenes = window.__phaserGame.scene.scenes;
+      for (var si=0; si<scenes.length; si++){
+        var sc = scenes[si];
+        if (sc.sound && sc.cache && sc.cache.audio && sc.cache.audio.has('bgmusic')){
+          if (!sc.bgMusic){
+            sc.bgMusic = sc.sound.add('bgmusic',{loop:true,volume:0.20});
+            sc.bgMusic.play();
+          }
+          break;
+        }
+      }
+    };
   }
 });
 
@@ -1204,16 +1220,119 @@ var GardenScene = new Phaser.Class({
     this._farmhouseShadowMeta = { x: fhPxX, y: fhPxY, w: fhW, h: fhH };
     this._farmhouseShadow = self.add.graphics().setDepth(fhPxY + fhH - 1);
     this.refreshSunShadow();
-    if (this.textures.exists('ts_house')){
-      this._placeCropImage('ts_house',0,80,160,116,fhPxX+fhW/2,fhPxY+fhH*0.55,fhW*1.05,fhH*0.70,fhPxY+fhH*0.55);
-      this._placeCropImage('ts_house',0,16,160,64, fhPxX+fhW/2,fhPxY+fhH,fhW,fhH*0.40,fhPxY+fhH);
-      var wy2=fhPxY+fhH*0.63;
-      this._placeCropImage('ts_house',32,208,32,32,fhPxX+fhW*0.22,wy2,TS*0.9,TS*0.9,wy2+1);
-      this._placeCropImage('ts_house',64,208,32,32,fhPxX+fhW*0.50,wy2,TS*0.9,TS*0.9,wy2+1);
-      this._placeCropImage('ts_house',96,208,32,32,fhPxX+fhW*0.78,wy2,TS*0.9,TS*0.9,wy2+1);
-    } else {
-      this._placeCropImage('ts_buildings',0,0,128,192,fhPxX+fhW/2,fhPxY+fhH,fhW,fhH,fhPxY+fhH);
-    }
+    // ---- Procedural house matching upload 2 reference ----
+    // Drawn entirely with Graphics — no external asset needed.
+    (function drawHouse(){
+      var hg = self.add.graphics().setDepth(fhPxY + fhH);
+      var x = fhPxX, y = fhPxY, w = fhW, h = fhH;
+      var mx = x + w/2;  // horizontal centre
+
+      // --- Foundation pebble path (stone surround at base) ---
+      hg.fillStyle(0xc0b4a0, 1);
+      hg.fillRect(x - 4, y + h*0.62, w + 8, h*0.38 + 4);
+      // pebble texture dots
+      hg.fillStyle(0xa89880, 0.5);
+      for (var pi = 0; pi < 18; pi++){
+        var px2 = x + 4 + ((pi * 37) % (w - 8));
+        var py2 = y + h*0.66 + ((pi * 19) % Math.round(h*0.28));
+        hg.fillCircle(px2, py2, 2 + (pi%3));
+      }
+
+      // --- Stone wall facade ---
+      hg.fillStyle(0x7a8898, 1);
+      hg.fillRect(x + 2, y + h*0.44, w - 4, h*0.38);
+      // Stone blocks texture
+      hg.lineStyle(1, 0x606878, 0.7);
+      var blockH = 8, rowCount = Math.floor(h*0.38/blockH);
+      for (var row = 0; row < rowCount; row++){
+        var ry2 = y + h*0.44 + row*blockH;
+        var offset = (row % 2) * 14;
+        for (var bx = x+2; bx < x+w-4; bx += 28){
+          hg.strokeRect(bx + offset, ry2, 28, blockH);
+        }
+      }
+
+      // --- Cream/beige gable below roof peak ---
+      hg.fillStyle(0xe8d8b4, 1);
+      hg.fillRect(x + 4, y + h*0.22, w - 8, h*0.24);
+
+      // --- Red tiled roof (main body — trapezoid shape) ---
+      hg.fillStyle(0x9e3030, 1);
+      hg.fillTriangle(
+        mx, y + 2,              // peak
+        x - 6, y + h*0.44,     // left eave
+        x + w + 6, y + h*0.44  // right eave
+      );
+      // Roof tile rows (darker lines)
+      hg.lineStyle(1, 0x7a2020, 0.6);
+      var roofH = h*0.42;
+      for (var ti = 1; ti < 7; ti++){
+        var tFrac = ti / 7;
+        var tY = y + 2 + tFrac * roofH;
+        var tSpread = tFrac * (w/2 + 6);
+        hg.beginPath();
+        hg.moveTo(mx - tSpread, tY);
+        hg.lineTo(mx + tSpread, tY);
+        hg.strokePath();
+      }
+      // Roof ridge cap (cream strip at peak)
+      hg.fillStyle(0xe8d8b4, 1);
+      hg.fillRect(mx - 6, y, 12, 12);
+
+      // --- Chimney (left side, slightly above roof line) ---
+      hg.fillStyle(0x506070, 1);
+      hg.fillRect(x + w*0.22 - 8, y - 14, 16, h*0.28);
+      // chimney top cap
+      hg.fillStyle(0x404858, 1);
+      hg.fillRect(x + w*0.22 - 10, y - 16, 20, 5);
+      // chimney smoke hole
+      hg.fillStyle(0x202830, 1);
+      hg.fillRect(x + w*0.22 - 5, y - 14, 10, 4);
+
+      // --- Eave overhang (cream strip along roof base) ---
+      hg.fillStyle(0xddd0b8, 1);
+      hg.fillRect(x - 4, y + h*0.42, w + 8, 8);
+
+      // --- Three windows (evenly spaced, warm blue frames) ---
+      var winY = y + h*0.50, winW = Math.round(w*0.14), winH2 = Math.round(h*0.20);
+      var winPositions = [x + w*0.18, x + w*0.46, x + w*0.74];
+      winPositions.forEach(function(wx2){
+        // Window frame (brown wood)
+        hg.fillStyle(0x8b5a2a, 1);
+        hg.fillRect(wx2 - winW/2 - 2, winY - 2, winW + 4, winH2 + 4);
+        // Window glass (blue)
+        hg.fillStyle(0x7090b8, 1);
+        hg.fillRect(wx2 - winW/2, winY, winW, winH2);
+        // Window cross (divider)
+        hg.fillStyle(0x8b5a2a, 1);
+        hg.fillRect(wx2 - 1, winY, 2, winH2);
+        hg.fillRect(wx2 - winW/2, winY + winH2/2 - 1, winW, 2);
+        // Window highlight
+        hg.fillStyle(0xaaccee, 0.5);
+        hg.fillRect(wx2 - winW/2 + 2, winY + 2, winW/2 - 3, winH2/2 - 3);
+      });
+
+      // --- Arched door (right of centre) ---
+      var dX = x + w*0.70, dW = Math.round(w*0.15), dH = Math.round(h*0.28);
+      var dY = y + h*0.55;
+      // Door frame
+      hg.fillStyle(0x6a3a10, 1);
+      hg.fillRect(dX - dW/2 - 2, dY - 2, dW + 4, dH + 2);
+      // Door arch (top rounded part)
+      hg.fillCircle(dX, dY, dW/2 + 2);
+      // Door fill
+      hg.fillStyle(0x8b5a22, 1);
+      hg.fillRect(dX - dW/2, dY, dW, dH);
+      hg.fillCircle(dX, dY, dW/2);
+      // Door planks (vertical lines)
+      hg.lineStyle(1, 0x6a3a10, 0.5);
+      hg.beginPath(); hg.moveTo(dX, dY - dW/2); hg.lineTo(dX, dY + dH); hg.strokePath();
+      hg.beginPath(); hg.moveTo(dX - dW/4, dY); hg.lineTo(dX - dW/4, dY+dH); hg.strokePath();
+      hg.beginPath(); hg.moveTo(dX + dW/4, dY); hg.lineTo(dX + dW/4, dY+dH); hg.strokePath();
+      // Door handle
+      hg.fillStyle(0xc8a030, 1);
+      hg.fillCircle(dX + dW/2 - 5, dY + dH*0.5, 3);
+    })();
 
     // ---- NOTICEBOARD (mailbox replacement next to farmhouse) ----
     // Source: Buildings32 col 4 row 0 = px(128,0,32,32)
@@ -1582,6 +1701,18 @@ var GardenScene = new Phaser.Class({
         bed.plants.add(s);
       }
     }
+  },
+
+  enterHouse: function(){
+    if (this._transitioning) return;
+    this._transitioning=true; var self=this;
+    this._savedPlayerX=this.player.x; this._savedPlayerY=this.player.y;
+    this.cameras.main.fadeOut(400,0,0,0);
+    this.cameras.main.once('camerafadeoutcomplete',function(){
+      self._transitioning=false;
+      self.scene.sleep('Garden');
+      self.scene.run('Interior');
+    });
   },
 
   // ============================================================
@@ -2013,6 +2144,7 @@ var GardenScene = new Phaser.Class({
     // each: id, label, tile centre, radius (tiles)
     this.objs = [
       { id:'house',     label:'FARMHOUSE — Practicals',     cx: FARMHOUSE.c + FARMHOUSE.w/2, cy: FARMHOUSE.r + FARMHOUSE.h/2, r:4.5 },
+      { id:'house_door', label:'DOOR — Enter',                cx: FARMHOUSE.c + FARMHOUSE.w/2, cy: FARMHOUSE.r + FARMHOUSE.h - 0.3, r:1.8 },
       { id:'tree',      label:'STUDY TREE — Quizzes',        cx: STUDY_TREE.c + STUDY_TREE.w/2, cy: STUDY_TREE.r + STUDY_TREE.h/2, r:3.5 },
       { id:'mailbox',   label:'NOTICEBOARD — Messages',      cx: NOTICEBOARD.c + 0.5, cy: NOTICEBOARD.r + 0.5, r:2.0 },
       { id:'cave',      label:'CAVE — Extension',            cx: CAVE.c + CAVE.w/2, cy: CAVE.r + CAVE.h/2, r:4.0 },
@@ -2066,6 +2198,7 @@ var GardenScene = new Phaser.Class({
       var hint = o._skillHint || (nearPond ? 'fishing' : 'botany');
       if (typeof _pendingSkillHint !== 'undefined') _pendingSkillHint = hint;
     }
+    if (o.id==='house_door'){ this.enterHouse(); return; }
     openModal(o.id, this);
   },
 
@@ -2319,6 +2452,315 @@ var GardenScene = new Phaser.Class({
 });
 
 // ============================================================
+//  INTERIOR SCENE — layout matches reference image (upload 1)
+// ============================================================
+var InteriorScene = {
+  key: 'Interior',
+  preload: function(){},
+
+  create: function(){
+    var self = this;
+    var TS = TILE;
+    // Room: 22 tiles wide x 15 tiles tall, centred in viewport
+    var RW = 22, RH = 15;
+    var OX = Math.floor((VIEW_W - RW*TS)/2);
+    var OY = Math.floor((VIEW_H - RH*TS)/2);
+    this._OX=OX; this._OY=OY; this._RW=RW; this._RH=RH;
+    this._transitioning=false; this._exitHint=null;
+
+    var g = this.add.graphics();
+
+    // ── FLOORS ──
+    // Main stone floor (grey-blue, whole interior)
+    g.fillStyle(0x7a8090, 1);
+    g.fillRect(OX+TS, OY+TS, (RW-2)*TS, (RH-2)*TS);
+    // Stone block texture
+    g.lineStyle(1, 0x606878, 0.4);
+    for (var rr=1;rr<RH-1;rr++) for (var cc=1;cc<RW-1;cc++)
+      g.strokeRect(OX+cc*TS, OY+rr*TS, TS, TS);
+
+    // Bedroom red carpet (top-centre area, rows 1-4 cols 5-13)
+    g.fillStyle(0x8a2020, 0.85);
+    g.fillRect(OX+5*TS, OY+TS, 9*TS, 4*TS);
+    // Carpet fringe
+    g.lineStyle(2, 0xa03030, 1);
+    g.strokeRect(OX+5*TS, OY+TS, 9*TS, 4*TS);
+
+    // Pantry floor — slightly lighter (top-right, rows 1-5 cols 14-21)
+    g.fillStyle(0x8a8898, 1);
+    g.fillRect(OX+14*TS, OY+TS, 7*TS, 5*TS);
+
+    // Small side room floor (left, rows 7-13 cols 1-5)
+    g.fillStyle(0x707080, 1);
+    g.fillRect(OX+TS, OY+7*TS, 4*TS, 6*TS);
+
+    // Entry/porch floor (bottom area, row 13 cols 5-17)
+    g.fillStyle(0x9a8878, 1);
+    g.fillRect(OX+5*TS, OY+12*TS, 12*TS, 2*TS);
+    // Red entry mat
+    g.fillStyle(0x8a2828, 1);
+    g.fillRect(OX+13*TS, OY+13*TS, 5*TS, TS);
+
+    // ── WALLS ──
+    // Outer walls (blue-grey stone)
+    g.fillStyle(0x606878, 1);
+    g.fillRect(OX, OY, RW*TS, TS);                          // N
+    g.fillRect(OX, OY+(RH-1)*TS, RW*TS, TS);               // S
+    g.fillRect(OX, OY, TS, RH*TS);                          // W
+    g.fillRect(OX+(RW-1)*TS, OY, TS, RH*TS);               // E
+    // Stone texture on walls
+    g.lineStyle(1, 0x505868, 0.8);
+    for (var wc=0;wc<RW;wc++){
+      for (var rr2=0;rr2<RH;rr2++){
+        var onWall = wc===0||wc===RW-1||rr2===0||rr2===RH-1;
+        if (onWall && (wc+rr2)%2===0)
+          g.strokeRect(OX+wc*TS+3, OY+rr2*TS+3, TS-6, TS-6);
+      }
+    }
+
+    // White/cream trim border (inner edge of outer walls)
+    g.fillStyle(0xece8d8, 1);
+    g.fillRect(OX+TS-3, OY+TS-3, (RW-2)*TS+6, 3);          // N inner trim
+    g.fillRect(OX+TS-3, OY+(RH-2)*TS, (RW-2)*TS+6, 3);     // S inner trim
+    g.fillRect(OX+TS-3, OY+TS-3, 3, (RH-2)*TS+6);          // W inner trim
+    g.fillRect(OX+(RW-2)*TS, OY+TS-3, 3, (RH-2)*TS+6);     // E inner trim
+
+    // Interior dividing walls
+    // Bedroom/hall divider (horizontal, row 5 cols 1-13)
+    g.fillStyle(0x606878, 1);
+    g.fillRect(OX+TS, OY+5*TS, 13*TS, TS);
+    g.fillStyle(0xece8d8, 1);
+    g.fillRect(OX+TS, OY+5*TS, 13*TS, 3);
+    g.fillRect(OX+TS, OY+6*TS-3, 13*TS, 3);
+
+    // Pantry vertical divider (col 14, rows 1-6)
+    g.fillStyle(0x606878, 1);
+    g.fillRect(OX+14*TS, OY+TS, TS, 5*TS);
+    g.fillStyle(0xece8d8, 1);
+    g.fillRect(OX+14*TS, OY+TS, 3, 5*TS);
+    g.fillRect(OX+15*TS-3, OY+TS, 3, 5*TS);
+
+    // Left side room vertical divider (col 5, rows 7-13)
+    g.fillStyle(0x606878, 1);
+    g.fillRect(OX+5*TS, OY+7*TS, TS, 6*TS);
+    // Right side divider (col 14, rows 7-12)
+    g.fillRect(OX+14*TS, OY+6*TS, TS, 7*TS);
+
+    // Horizontal entry divider (row 12 cols 5-14)
+    g.fillRect(OX+5*TS, OY+12*TS, 9*TS, TS);
+
+    // ── DOOR OPENINGS (gaps in walls) ──
+    // Main entrance (south wall, cols 9-11)
+    g.fillStyle(0x1a1208, 1);
+    g.fillRect(OX+9*TS+2, OY+(RH-1)*TS, TS*2-4, TS);
+    // Left side room door (col 5, row 10-11)
+    g.fillStyle(0x7a8090, 1);
+    g.fillRect(OX+5*TS, OY+10*TS, TS, TS);
+    // Pantry door (col 14, row 3-4)
+    g.fillStyle(0x8a8898, 1);
+    g.fillRect(OX+14*TS, OY+3*TS, TS, TS);
+    // Right side door (col 14, row 9)
+    g.fillStyle(0x7a8090, 1);
+    g.fillRect(OX+14*TS, OY+9*TS, TS, TS);
+
+    // Door exit marker
+    this._doorX = OX+10*TS; this._doorY = OY+(RH-1)*TS;
+
+    // ── FURNITURE ──
+    // Using the Interior.png tileset via _placeCropImage-style approach but
+    // also supplemented with Graphics primitives for a rich look
+
+    var hasFurn = self.textures.exists('ts_interior');
+    var fsrc = hasFurn ? self.textures.get('ts_interior').getSourceImage() : null;
+
+    function furnCanvas(sx,sy,sw,sh,tx,ty,dw,dh){
+      if (!fsrc) return;
+      var key2='int2_'+sx+'_'+sy;
+      if (!self.textures.exists(key2)){
+        var c2=document.createElement('canvas'); c2.width=sw; c2.height=sh;
+        c2.getContext('2d').drawImage(fsrc,sx,sy,sw,sh,0,0,sw,sh);
+        self.textures.addCanvas(key2,c2);
+      }
+      return self.add.image(OX+tx*TS+dw/2,OY+ty*TS+dh,key2)
+        .setOrigin(0.5,1).setDisplaySize(dw,dh).setDepth(OY+ty*TS+dh+1);
+    }
+
+    // BEDROOM (rows 1-4, cols 5-13)
+    // Bed
+    if (hasFurn) furnCanvas(0,0,64,64, 5.5,1, TS*2,TS*2);
+    // Bedside table
+    if (hasFurn) furnCanvas(64,0,32,32, 8,1, TS,TS);
+    // Bookshelf
+    if (hasFurn) furnCanvas(160,0,32,64, 10,1, TS*1.1,TS*2);
+    // Second bookshelf with coloured books
+    if (hasFurn) furnCanvas(128,0,32,64, 11.2,1, TS*1.1,TS*2);
+
+    // Windows on N wall above bedroom (painted as Graphics)
+    g.fillStyle(0x8b5a2a, 1);
+    [[6.5,0.2],[9,0.2]].forEach(function(wp){ // two windows
+      g.fillRect(OX+wp[0]*TS-14, OY+wp[1]*TS+2, 28, 22);
+      g.fillStyle(0x7090b8, 1);
+      g.fillRect(OX+wp[0]*TS-12, OY+wp[1]*TS+4, 24, 18);
+      g.fillStyle(0x8b5a2a, 1);
+      g.fillRect(OX+wp[0]*TS-1, OY+wp[1]*TS+4, 2, 18);
+      g.fillRect(OX+wp[0]*TS-12, OY+wp[1]*TS+13, 24, 2);
+    });
+
+    // PANTRY (rows 1-5, cols 15-21)
+    // Produce shelves
+    if (hasFurn) furnCanvas(0,96,64,64, 15.5,1, TS*2.5,TS*2);
+    // Barrels
+    if (hasFurn) furnCanvas(64,96,32,32, 18.5,3, TS,TS);
+    if (hasFurn) furnCanvas(96,0,32,32, 19.5,1, TS,TS);
+    // Second shelf unit
+    if (hasFurn) furnCanvas(128,96,32,32, 20,2, TS,TS);
+
+    // MAIN HALL — Round rug + dining table
+    // Round purple rug
+    g.fillStyle(0x4848a0, 0.9);
+    g.fillEllipse(OX+9.5*TS, OY+9.5*TS, TS*5, TS*4.5);
+    g.lineStyle(2, 0x6060b8, 1);
+    g.strokeEllipse(OX+9.5*TS, OY+9.5*TS, TS*5, TS*4.5);
+    // Rug inner dotted border
+    g.lineStyle(1, 0x5858b0, 0.6);
+    g.strokeEllipse(OX+9.5*TS, OY+9.5*TS, TS*4.2, TS*3.8);
+
+    // Dining table + chairs
+    if (hasFurn) furnCanvas(0,160,96,96, 7.5,7.2, TS*3,TS*3);
+
+    // LEFT SIDE ROOM (rows 7-12, cols 1-4)
+    // Round arch door on west wall
+    g.fillStyle(0x6a3a10, 1);
+    g.fillRect(OX+TS+2, OY+10*TS-14, 28, 40);
+    g.fillStyle(0x8b5a22, 1);
+    g.fillRect(OX+TS+4, OY+10*TS-10, 24, 38);
+    g.fillCircle(OX+TS+16, OY+10*TS-10, 12);
+    // Small potion/craft table
+    if (hasFurn) furnCanvas(0,160,64,48, 1.5,9, TS*1.8,TS*1.5);
+    // Barrel
+    if (hasFurn) furnCanvas(96,0,32,32, 3.5,11, TS*0.9,TS*0.9);
+
+    // RIGHT SIDE AREA (rows 7-12, cols 15-21)
+    // Stone arch on wall
+    g.fillStyle(0x505868, 1);
+    g.fillRect(OX+16*TS, OY+8*TS, TS*2.5, TS*2.5);
+    g.fillStyle(0x404858, 1);
+    g.fillCircle(OX+17.25*TS, OY+8*TS, TS*1.25);
+    // Crafting bench / pump mechanism
+    if (hasFurn) furnCanvas(96,160,64,64, 16.5,9, TS*2,TS*2);
+    // Red carpet area
+    g.fillStyle(0x8a2020, 0.7);
+    g.fillRect(OX+15*TS, OY+12*TS, TS*5, TS);
+
+    // STAIRS (top-left, rows 1-5, cols 1-4)
+    var stairG = self.add.graphics().setDepth(OY+5*TS);
+    stairG.fillStyle(0x8a6040, 1);
+    stairG.fillRect(OX+TS+2, OY+TS+2, TS*4-4, TS*4-4);
+    // Stair treads
+    stairG.fillStyle(0x705030, 0.5);
+    for (var si=0;si<7;si++)
+      stairG.fillRect(OX+TS+2, OY+TS+2+si*((TS*4-4)/7), TS*4-4*(si/7), 3);
+    // Stair side rails
+    stairG.fillStyle(0x5a3820, 1);
+    stairG.fillRect(OX+TS+2, OY+TS+2, 4, TS*4-4);
+    stairG.fillRect(OX+5*TS-6, OY+TS+2, 4, TS*4-4);
+
+    // ── PHYSICS WALLS ──
+    this.iWalls=this.physics.add.staticGroup();
+    var self3=this;
+    function sw2(x,y,w,h){
+      var r=self3.add.rectangle(x,y,w,h).setOrigin(0,0);
+      self3.physics.add.existing(r,true); self3.iWalls.add(r);
+    }
+    // Outer walls
+    sw2(OX, OY, RW*TS, TS);
+    sw2(OX, OY+(RH-1)*TS, OX+9*TS-OX, TS);             // S left of door
+    sw2(OX+11*TS, OY+(RH-1)*TS, (RW-11)*TS, TS);        // S right of door
+    sw2(OX, OY, TS, RH*TS);
+    sw2(OX+(RW-1)*TS, OY, TS, RH*TS);
+    // Interior walls
+    sw2(OX+TS, OY+5*TS, 13*TS, TS);
+    sw2(OX+14*TS, OY+TS, TS, 5*TS);
+    sw2(OX+5*TS, OY+7*TS, TS, 3*TS);   // left room wall N part
+    sw2(OX+5*TS, OY+11*TS, TS, 2*TS);  // left room wall S part
+    sw2(OX+14*TS, OY+6*TS, TS, 3*TS);  // right divider N part
+    sw2(OX+14*TS, OY+10*TS, TS, 3*TS); // right divider S part
+    sw2(OX+5*TS, OY+12*TS, 9*TS, TS);  // entry divider
+
+    // Exit hint label
+    this.add.text(OX+10*TS, OY+(RH-0.3)*TS, '[E] Exit',
+      {fontFamily:'monospace',fontSize:'16px',color:'#f0d060',backgroundColor:'#1a1208',padding:{x:5,y:3}})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(99999);
+
+    // ── PLAYER ──
+    var ck=(ST&&ST.appearance&&ST.appearance.character)||'player';
+    if (!this.textures.exists(ck)) ck='player';
+    this._ip=this.physics.add.sprite(OX+10*TS, OY+(RH-2)*TS, ck, ck==='player'?0:1);
+    this._ip.charKey=ck; this._ip.setOrigin(0.5,0.85).setDepth(9000).setCollideWorldBounds(true);
+    if (ck==='player'){this._ip.body.setSize(20,16);this._ip.body.setOffset(30,56);}
+    else{this._ip.body.setSize(14,10);this._ip.body.setOffset(9,20);}
+    this._ip.facing='up';
+    this._ip.play((ck==='player'?'':''+ck+'-')+'idle-up');
+    this.physics.add.collider(this._ip,this.iWalls);
+
+    this._ic=this.input.keyboard.createCursorKeys();
+    this._ik=this.input.keyboard.addKeys('W,A,S,D,E,ESC');
+    var self4=this;
+    this.input.keyboard.on('keydown-E',function(){self4._tryExit();});
+    this.input.keyboard.on('keydown-ESC',function(){self4._tryExit();});
+    this.cameras.main.fadeIn(400,0,0,0);
+  },
+
+  _tryExit: function(){
+    if (this._transitioning) return;
+    var p=this._ip; if (!p) return;
+    var near=Math.abs(p.x-this._doorX)<TILE*2.5 && p.y>this._doorY-TILE*1.5;
+    if (!near){
+      if (!this._exitHint){
+        var self=this, txt=this.add.text(p.x,p.y-TILE*1.5,'Walk to the door',
+          {fontFamily:'monospace',fontSize:'15px',color:'#f0d060',backgroundColor:'#1a1208',padding:{x:5,y:3}})
+          .setOrigin(0.5).setDepth(99999);
+        this._exitHint=txt;
+        this.time.delayedCall(1800,function(){if(txt&&txt.scene)txt.destroy();self._exitHint=null;});
+      }
+      return;
+    }
+    this._doExit();
+  },
+
+  _doExit: function(){
+    if (this._transitioning) return;
+    this._transitioning=true; var self=this;
+    this.cameras.main.fadeOut(400,0,0,0);
+    this.cameras.main.once('camerafadeoutcomplete',function(){
+      self._transitioning=false;
+      self.scene.stop('Interior');
+      self.scene.wake('Garden');
+    });
+  },
+
+  update: function(time,delta){
+    var p=this._ip; if (!p||this._transitioning) return;
+    var spd=90,k=this._ik,c=this._ic,vx=0,vy=0;
+    if((k.A&&k.A.isDown)||(c.left&&c.left.isDown))   vx=-spd;
+    if((k.D&&k.D.isDown)||(c.right&&c.right.isDown))  vx=spd;
+    if((k.W&&k.W.isDown)||(c.up&&c.up.isDown))        vy=-spd;
+    if((k.S&&k.S.isDown)||(c.down&&c.down.isDown))    vy=spd;
+    if(vx&&vy){vx*=0.707;vy*=0.707;}
+    p.setVelocity(vx,vy);
+    var ck=p.charKey||'player',mv=vx!==0||vy!==0,fc=p.facing;
+    if(Math.abs(vx)>Math.abs(vy)) fc=vx<0?'left':'right';
+    else if(vy!==0) fc=vy<0?'up':'down';
+    p.facing=fc;
+    var fl=false,af=fc;
+    if(ck!=='player'&&fc==='right'){af='left';fl=true;}
+    var an=(ck==='player'?'':ck+'-')+(mv?'walk-':'idle-')+af;
+    if(!p.anims.currentAnim||p.anims.currentAnim.key!==an) p.play(an,true);
+    p.setFlipX(fl); p.setDepth(p.y+1000);
+  }
+};
+
+// ============================================================
 //  PHASER CONFIG
 // ============================================================
 loadState();
@@ -2332,7 +2774,7 @@ var phaserConfig = {
   pixelArt: true,
   roundPixels: true,
   physics: { default:'arcade', arcade:{ debug:false } },
-  scene: [ BootScene, GardenScene ],
+  scene: [ BootScene, GardenScene, InteriorScene ],
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
