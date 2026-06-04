@@ -558,7 +558,7 @@ var BootScene = new Phaser.Class({
     // Footstep sounds — two variants, alternated for natural cadence
     this.load.audio('step1', A+'Step_dirt_1.ogg');
     this.load.audio('step2', A+'Step_dirt_2.ogg');
-    this.load.audio('bgmusic', A+'Game_song_2.mp3');
+    this.load.audio('bgmusic', A+'Game song 2.mp3');
 
     // Existing assets we still use
     this.load.image('gardenbeds', A+'Garden_beds.png');   // soil texture for module beds
